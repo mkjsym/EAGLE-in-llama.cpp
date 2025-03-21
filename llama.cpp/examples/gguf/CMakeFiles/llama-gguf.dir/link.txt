@@ -1,0 +1,1 @@
+/usr/bin/c++ -O3 -DNDEBUG "CMakeFiles/llama-gguf.dir/gguf.cpp.o" -o ../../bin/llama-gguf  -Wl,-rpath,/home/youngmin/llama.cpp/bin: ../../bin/libggml.so -lpthread ../../bin/libggml-cpu.so ../../bin/libggml-cuda.so ../../bin/libggml-base.so /usr/local/cuda-12.2/targets/x86_64-linux/lib/stubs/libcuda.so

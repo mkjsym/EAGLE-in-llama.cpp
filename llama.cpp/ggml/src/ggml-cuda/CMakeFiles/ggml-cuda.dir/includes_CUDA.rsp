@@ -1,0 +1,1 @@
+-I"/home/youngmin/llama.cpp/ggml/src/ggml-cuda/.." -I/home/youngmin/llama.cpp/ggml/src/../include -isystem "/usr/local/cuda-12.2/targets/x86_64-linux/include"
