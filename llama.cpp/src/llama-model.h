@@ -317,6 +317,9 @@ struct llama_model {
     struct ggml_tensor * conv1d   = nullptr;
     struct ggml_tensor * conv1d_b = nullptr;
 
+    struct ggml_tensor * fc = nullptr;
+    struct ggml_tensor * fc_bias = nullptr;
+
     std::vector<llama_layer> layers;
 
     llama_model_params params;

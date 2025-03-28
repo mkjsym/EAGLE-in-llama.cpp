@@ -515,6 +515,7 @@ void llama_model::load_hparams(llama_model_loader & ml) {
                     }
                 } else {
                     switch (hparams.n_layer) {
+                        case 1: type = LLM_TYPE_EAGLE; break; //EAGLE
                         case 16: type = LLM_TYPE_1B; break; // Llama 3.2 1B
                         case 22: type = LLM_TYPE_1B; break;
                         case 26: type = LLM_TYPE_3B; break;
@@ -1291,6 +1292,8 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
         pimpl->gpu_buft_list.emplace(dev, std::move(buft_list));
     }
 
+    LLAMA_LOG_INFO("%s: loading model tensors, this can take a while... (mmap = %s)\n", __func__, ml.use_mmap ? "true" : "false");
+
     // calculate the split points
     bool all_zero = tensor_split == nullptr || std::all_of(tensor_split, tensor_split + n_devices(), [](float x) { return x == 0.0f; });
     std::vector<float> splits(n_devices());
@@ -1306,6 +1309,8 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
     } else {
         std::copy(tensor_split, tensor_split + n_devices(), splits.begin());
     }
+
+    LLAMA_LOG_INFO("%s: loading model tensors, this can take a while... (mmap = %s)\n", __func__, ml.use_mmap ? "true" : "false");
 
     // sum and normalize the splits to get the split points
     float split_sum = 0.0f;
@@ -1376,6 +1381,8 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
     const auto TENSOR_DUPLICATED   = llama_model_loader::TENSOR_DUPLICATED;
     const auto TENSOR_NOT_REQUIRED = llama_model_loader::TENSOR_NOT_REQUIRED;
 
+    LLAMA_LOG_INFO("%s: loading model tensors, this can take a while... (mmap = %s)\n", __func__, ml.use_mmap ? "true" : "false");
+
     // create tensors for the weights
     {
         // note: cast to int64_t since we will use these for the tensor dimensions
@@ -1404,16 +1411,18 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
         ggml_backend_buffer_type_t first_moved_from_buft = nullptr;
         ggml_backend_buffer_type_t first_moved_to_buft = nullptr;
 
+        LLAMA_LOG_INFO("%s: loading model tensors, this can take a while... (mmap = %s)\n", __func__, ml.use_mmap ? "true" : "false");
+
         auto create_tensor = [&](const LLM_TN_IMPL & tn, const std::initializer_list<int64_t> & ne, int flags) -> ggml_tensor * {
             ggml_tensor * t_meta = ml.get_tensor_meta(tn.str().c_str());
-
+            LLAMA_LOG_INFO("1, %s: %s\n", __func__, tn.str().c_str());
             if (!t_meta) {
                 if (flags & TENSOR_NOT_REQUIRED) {
                     return nullptr;
                 }
                 throw std::runtime_error(format("missing tensor '%s'", tn.str().c_str()));
             }
-
+            LLAMA_LOG_INFO("2, %s: %s\n", __func__, tn.str().c_str());
             // some models use the token embedding tensor as the output, but since these are used in different layers and with different ops
             // the tensor is duplicated
             // to handle this, we check if the tensor is duplicated, and if so, we assume that it is being loaded as the output tensor
@@ -1421,14 +1430,14 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
             if (tn.tensor == LLM_TENSOR_TOKEN_EMBD && flags & TENSOR_DUPLICATED) {
                 tn_tensor = LLM_TENSOR_OUTPUT;
             }
-
+            LLAMA_LOG_INFO("3, %s: %s\n", __func__, tn.str().c_str());
             llm_tensor_info info;
             try {
                 info = llm_tensor_info_for(tn_tensor);
             } catch (const std::out_of_range & e) {
                 throw std::runtime_error(format("missing tensor info mapping for %s", tn.str().c_str()));
             }
-
+            LLAMA_LOG_INFO("4, %s: %s\n", __func__, tn.str().c_str());
             // skip unused tensors
             if (info.op == GGML_OP_NONE) {
                 LLAMA_LOG_WARN("model has unused tensor %s -- ignoring\n", tn.str().c_str());
@@ -1436,7 +1445,7 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
 
                 return nullptr;
             }
-
+            LLAMA_LOG_INFO("5, %s: %s\n", __func__, tn.str().c_str());
             // tensors with "bias" suffix are always used with GGML_OP_ADD
             ggml_op op;
             bool bias = tn.suffix != nullptr && strcmp(tn.suffix, "bias") == 0;
@@ -1445,18 +1454,18 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
             } else {
                 op = info.op;
             }
-
+            LLAMA_LOG_INFO("6, %s: %s\n", __func__, tn.str().c_str());
             // sanity checks
             if (info.layer == LLM_TENSOR_LAYER_INPUT || info.layer == LLM_TENSOR_LAYER_OUTPUT) {
                 if (tn.bid != -1) {
                     GGML_ABORT("input/output layer tensor %s used with a layer number", tn.str().c_str());
                 }
             } else {
-                if (tn.bid == -1) {
+                if (tn.bid == -1 && tn.tensor != LLM_TENSOR_FC) {
                     GGML_ABORT("repeating layer tensor %s used without a layer number", tn.str().c_str());
                 }
             }
-
+            LLAMA_LOG_INFO("7, %s: %s\n", __func__, tn.str().c_str());
             // select the buffer type for this tensor
             buft_list_t * buft_list;
             switch (info.layer) {
@@ -1466,12 +1475,18 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                 case LLM_TENSOR_LAYER_OUTPUT:
                     buft_list = pimpl->dev_output.buft_list;
                     break;
-                case LLM_TENSOR_LAYER_REPEATING:
-                    buft_list = pimpl->dev_layer.at(tn.bid).buft_list;
+                case LLM_TENSOR_LAYER_REPEATING: {
+                    if (tn.tensor != LLM_TENSOR_FC)
+                        buft_list = pimpl->dev_layer.at(tn.bid).buft_list;
+                    else
+                        buft_list = pimpl->dev_input.buft_list;
                     break;
+                }
                 default:
                     GGML_ABORT("invalid layer %d for tensor %s", info.layer, tn.str().c_str());
             }
+
+            LLAMA_LOG_INFO("8, %s: %s\n", __func__, tn.str().c_str());
 
             ggml_backend_buffer_type_t buft = select_weight_buft(hparams, t_meta, op, *buft_list);
             if (!buft) {
@@ -1568,6 +1583,65 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                             layer.ffn_gate_exps = create_tensor(tn(LLM_TENSOR_FFN_GATE_EXPS, "weight", i), {n_embd,   n_ff, n_expert}, TENSOR_NOT_REQUIRED);
                             layer.ffn_down_exps = create_tensor(tn(LLM_TENSOR_FFN_DOWN_EXPS, "weight", i), {  n_ff, n_embd, n_expert}, 0);
                             layer.ffn_up_exps   = create_tensor(tn(LLM_TENSOR_FFN_UP_EXPS,   "weight", i), {n_embd,   n_ff, n_expert}, 0);
+                        }
+                    }
+                } break;
+            case LLM_ARCH_EAGLE:
+                {
+                    tok_embd = create_tensor(tn(LLM_TENSOR_TOKEN_EMBD, "weight"), {n_embd, n_vocab}, 0);
+
+                    // output
+                    //output_norm = create_tensor(tn(LLM_TENSOR_OUTPUT_NORM, "weight"), {n_embd}, 0);
+                    //output      = create_tensor(tn(LLM_TENSOR_OUTPUT,      "weight"), {n_embd, n_vocab}, TENSOR_NOT_REQUIRED);
+
+                    // if output is NULL, init from the input tok embed
+                    if (output == NULL) {
+                        output = create_tensor(tn(LLM_TENSOR_TOKEN_EMBD, "weight"), {n_embd, n_vocab}, TENSOR_DUPLICATED);
+                    }
+
+                    fc = create_tensor(tn(LLM_TENSOR_FC, "weight"), {n_embd * 2, n_embd}, 0);
+                    fc_bias = create_tensor(tn(LLM_TENSOR_FC, "bias"), {n_embd}, 0);
+
+                    for (int i = 0; i < n_layer; ++i) {
+                        auto & layer = layers[i];
+
+                        //layer.attn_norm = create_tensor(tn(LLM_TENSOR_ATTN_NORM, "weight", i), {n_embd}, 0);
+
+                        layer.wq = create_tensor(tn(LLM_TENSOR_ATTN_Q,   "weight", i), {n_embd, n_embd_head_k * n_head}, 0);
+                        layer.wk = create_tensor(tn(LLM_TENSOR_ATTN_K,   "weight", i), {n_embd, n_embd_k_gqa}, 0);
+                        layer.wv = create_tensor(tn(LLM_TENSOR_ATTN_V,   "weight", i), {n_embd, n_embd_v_gqa}, 0);
+                        layer.wo = create_tensor(tn(LLM_TENSOR_ATTN_OUT, "weight", i), {n_embd_head_k * n_head, n_embd}, 0);
+
+                        // optional bias tensors
+                        //layer.bq = create_tensor(tn(LLM_TENSOR_ATTN_Q,   "bias", i), {n_embd},     TENSOR_NOT_REQUIRED);
+                        //layer.bk = create_tensor(tn(LLM_TENSOR_ATTN_K,   "bias", i), {n_embd_gqa}, TENSOR_NOT_REQUIRED);
+                        //layer.bv = create_tensor(tn(LLM_TENSOR_ATTN_V,   "bias", i), {n_embd_gqa}, TENSOR_NOT_REQUIRED);
+                        //layer.bo = create_tensor(tn(LLM_TENSOR_ATTN_OUT, "bias", i), {n_embd},     TENSOR_NOT_REQUIRED);
+
+                        layer.ffn_norm = create_tensor(tn(LLM_TENSOR_FFN_NORM, "weight", i), {n_embd}, 0);
+
+                        /*if (hparams.rope_scaling_type_train == LLAMA_ROPE_SCALING_TYPE_LONGROPE) {
+                            layer.rope_long  = create_tensor(tn(LLM_TENSOR_ROPE_FACTORS_LONG,  "weight", i), {n_rot/2}, TENSOR_NOT_REQUIRED | (i != 0 ? TENSOR_DUPLICATED : 0));
+                            layer.rope_short = create_tensor(tn(LLM_TENSOR_ROPE_FACTORS_SHORT, "weight", i), {n_rot/2}, TENSOR_NOT_REQUIRED | (i != 0 ? TENSOR_DUPLICATED : 0));
+                        }
+                        else {
+                            layer.rope_freqs = create_tensor(tn(LLM_TENSOR_ROPE_FREQS, "weight", i), {n_rot/2}, TENSOR_NOT_REQUIRED | (i != 0 ? TENSOR_DUPLICATED : 0));
+                        }*/
+
+                        if (n_expert == 0) {
+                            layer.ffn_gate = create_tensor(tn(LLM_TENSOR_FFN_GATE, "weight", i), {n_embd,   n_ff}, 0);
+                            layer.ffn_down = create_tensor(tn(LLM_TENSOR_FFN_DOWN, "weight", i), {  n_ff, n_embd}, 0);
+                            layer.ffn_up   = create_tensor(tn(LLM_TENSOR_FFN_UP,   "weight", i), {n_embd,   n_ff}, 0);
+
+                            // optional MLP bias
+                            //layer.ffn_gate_b = create_tensor(tn(LLM_TENSOR_FFN_GATE, "bias", i), {n_ff}, TENSOR_NOT_REQUIRED);
+                            //layer.ffn_down_b = create_tensor(tn(LLM_TENSOR_FFN_DOWN, "bias", i), {n_embd}, TENSOR_NOT_REQUIRED);
+                            //layer.ffn_up_b   = create_tensor(tn(LLM_TENSOR_FFN_UP,   "bias", i), {n_ff}, TENSOR_NOT_REQUIRED);
+                        } else {
+                            //layer.ffn_gate_inp  = create_tensor(tn(LLM_TENSOR_FFN_GATE_INP,  "weight", i), {n_embd, n_expert}, 0);
+                            //layer.ffn_gate_exps = create_tensor(tn(LLM_TENSOR_FFN_GATE_EXPS, "weight", i), {n_embd,   n_ff, n_expert}, TENSOR_NOT_REQUIRED);
+                            //layer.ffn_down_exps = create_tensor(tn(LLM_TENSOR_FFN_DOWN_EXPS, "weight", i), {  n_ff, n_embd, n_expert}, 0);
+                            //layer.ffn_up_exps   = create_tensor(tn(LLM_TENSOR_FFN_UP_EXPS,   "weight", i), {n_embd,   n_ff, n_expert}, 0);
                         }
                     }
                 } break;

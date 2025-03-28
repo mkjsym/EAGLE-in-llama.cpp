@@ -287,8 +287,63 @@ static struct ggml_tensor * llm_build_norm(
     return cur;
 }
 
-// 입력 차원의 절반으로 출력 차원을 줄이는 함수
 static struct ggml_tensor * llm_build_fc(
+    struct ggml_context * ctx,
+    struct ggml_tensor * cur,
+    struct ggml_tensor * up,
+    struct ggml_tensor * up_b,
+    llm_ffn_op_type type_op  // 활성화 함수 타입, FC에는 하나만 지정
+    ) {                // layer index, 로깅에 사용.
+
+    // Fully Connected Layer (FC) 구현
+
+    // 1. 첫 번째 FC 레이어 (up projection)
+    //    - up: 가중치 행렬 (weight matrix)
+    //    - up_b: 편향 (bias)
+    struct ggml_tensor * result = up ? ggml_mul_mat(ctx, up, cur): cur;  // down이 NULL 이면 tmp를 그대로 사용
+      if (up_b) {
+        result = ggml_add(ctx, result, up_b);
+    }
+
+    //  (up_s는 scaling을 위한 것으로 FC layer 구현에서는 제거)
+
+    // 2. 활성화 함수 (Activation Function)
+    //    - type_op에 지정된 활성화 함수를 적용
+    switch (type_op) {
+        case LLM_FFN_SILU:
+            result = ggml_silu(ctx, result);
+            break;
+        case LLM_FFN_GELU:
+            result = ggml_gelu(ctx, result);
+            break;
+        case LLM_FFN_RELU:
+            result = ggml_relu(ctx, result);
+            break;
+        case LLM_FFN_RELU_SQR:
+            result = ggml_relu(ctx, result);
+            result = ggml_sqr(ctx, result);
+            break;
+        case LLM_FFN_SWIGLU:
+          // SWIGLU는 2개의 입력이 필요하므로, 일반적인 FC layer와 맞지 않아 제외하는 것이 일반적.
+          // 만약 꼭 SwiGLU를 써야한다면, tmp를 둘로 나누고 silu 적용후 곱해야함. (위 코드 참고)
+          break;
+    }
+     //act_scales는 GELU에서만 사용되는데, 단순 FC layer 구현이 목적이므로 제거.
+
+    // 3. 두 번째 FC 레이어 (down projection)
+    //    - down: 가중치 행렬
+    //    - down_b: 편향
+    
+    // down_s는 scaling을 위한 것으로 FC layer구현에서는 제거
+
+    // (type_gate, gate, gate_b, gate_s는 gating 메커니즘을 위한 것으로, 일반적인 FC 레이어에는 필요 없음)
+    // (cb, il은 콜백 함수와 레이어 인덱스로, 로깅/디버깅에 사용될 수 있지만, FC 레이어의 핵심 기능은 아님)
+    // (llama_context는 LoRA에 필요한 context로 FC layer만들때는 필요없음.)
+    return result;
+}
+
+// 입력 차원의 절반으로 출력 차원을 줄이는 함수
+/*static struct ggml_tensor * llm_build_fc(
     struct ggml_context * ctx,
     struct ggml_tensor * input,
     struct ggml_tensor * weights,
@@ -319,7 +374,7 @@ static struct ggml_tensor * llm_build_fc(
     }
 
     return result;
-}
+}*/
 
 static struct ggml_tensor * llm_build_ffn(
         struct ggml_context * ctx,
@@ -1685,18 +1740,16 @@ struct llm_build_context {
 
         struct ggml_tensor * cur;
         struct ggml_tensor * inpL;
-        struct ggml_tensor * hidden_state;
+        //struct ggml_tensor * hidden_state;
 
         inpL = llm_build_inp_embd(ctx0, lctx, hparams, ubatch, model.tok_embd, cb);
 
-        // edit here (concat, fc)
-        struct ggml_tensor * embd_hs = ggml_concat(ctx0, inpL, hidden_state, 0);
-        cb(embd_hs, "concat", 1);
+        //hidden_state 연결...
 
-        struct ggml_tensor * weight;
-        struct ggml_tensor * bias;
-        struct ggml_tensor * inpL_fused = llm_build_fc(ctx0, embd_hs, weight, bias);
-        cb(inpL_fused, "fc", 1);
+        // edit here (concat, fc)
+        struct ggml_tensor * embd_hs = ggml_concat(ctx0, inpL, inpL, 0);
+        struct ggml_tensor * inpL_fused = llm_build_fc(ctx0, embd_hs, model.fc, model.fc_bias, LLM_FFN_RELU);
+        inpL = inpL_fused;
 
         // inp_pos - contains the positions
         struct ggml_tensor * inp_pos = build_inp_pos();

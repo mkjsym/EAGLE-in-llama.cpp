@@ -329,6 +329,7 @@ enum llm_tensor {
     LLM_TENSOR_POS_NET_ATTN_V,
     LLM_TENSOR_POS_NET_ATTN_OUT,
     LLM_TENSOR_FC,
+    LLM_TENSOR_FC_BIAS
 };
 
 enum llm_tensor_layer {

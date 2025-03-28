@@ -162,7 +162,7 @@ class TensorNameMap:
             "model.layers.{bid}.attention.wq",                           # internlm2
             "transformer.decoder_layer.{bid}.multi_head_attention.query",# Grok
             "transformer.h.{bid}.attn.attention.q_proj",                 # exaone
-            "layers.{bid}.self_attn.q_proj.weight", #EAGLE
+            "layers.{bid}.self_attn.q_proj", #EAGLE
         ),
 
         # Attention key
@@ -177,7 +177,7 @@ class TensorNameMap:
             "model.layers.{bid}.attention.wk",                         # internlm2
             "transformer.decoder_layer.{bid}.multi_head_attention.key",# Grok
             "transformer.h.{bid}.attn.attention.k_proj",               # exaone
-            "layers.{bid}.self_attn.k_proj.weight", #EAGLE
+            "layers.{bid}.self_attn.k_proj", #EAGLE
         ),
 
         # Attention value
@@ -191,7 +191,7 @@ class TensorNameMap:
             "model.layers.{bid}.attention.wv",                           # internlm2
             "transformer.decoder_layer.{bid}.multi_head_attention.value",# Grok
             "transformer.h.{bid}.attn.attention.v_proj",                 # exaone
-            "layers.{bid}.self_attn.v_proj.weight", #EAGLE
+            "layers.{bid}.self_attn.v_proj", #EAGLE
         ),
 
         # Attention output
@@ -218,7 +218,7 @@ class TensorNameMap:
             "encoder.layers.{bid}.self_attention.dense",                    # chatglm
             "transformer.layers.{bid}.attn.out_proj",                       # openelm
             "transformer.h.{bid}.attn.attention.out_proj",                  # exaone
-            "layers.{bid}.self_attn.o_proj.weight", #EAGLE
+            "layers.{bid}.self_attn.o_proj", #EAGLE
         ),
 
         # Attention output norm
@@ -256,7 +256,7 @@ class TensorNameMap:
             "transformer.decoder_layer.{bid}.rms_norm_2",                    # Grok
             "encoder.layers.{bid}.post_attention_layernorm",                 # chatglm
             "transformer.layers.{bid}.ffn_norm",                             # openelm
-            "layers.{bid}.post_attention_layernorm.weight", #EAGLE
+            "layers.{bid}.post_attention_layernorm", #EAGLE
         ),
 
         # Post feed-forward norm
@@ -313,7 +313,7 @@ class TensorNameMap:
             "model.layers.{bid}.residual_mlp.w3",                     # arctic
             "encoder.layers.{bid}.mlp.dense_h_to_4h",                 # chatglm
             "transformer.h.{bid}.mlp.c_fc_1",                         # exaone
-            "layers.{bid}.mlp.up_proj.weight", #EAGLE
+            "layers.{bid}.mlp.up_proj", #EAGLE
         ),
 
         MODEL_TENSOR.FFN_UP_EXP: (
@@ -346,7 +346,7 @@ class TensorNameMap:
             "transformer.h.{bid}.mlp.linear_1",           # refact
             "model.layers.{bid}.residual_mlp.w1",         # arctic
             "transformer.h.{bid}.mlp.c_fc_0",             # exaone
-            "layers.{bid}.mlp.gate_proj.weight", #EAGLE
+            "layers.{bid}.mlp.gate_proj", #EAGLE
         ),
 
         MODEL_TENSOR.FFN_GATE_EXP: (
@@ -387,7 +387,7 @@ class TensorNameMap:
             "encoder.layer.{bid}.mlp.down_layer",                     # jina-bert-v2
             "encoder.layers.{bid}.mlp.dense_4h_to_h",                 # chatglm
             "model.layers.h.{bid}.mlp.c_proj",                        # exaone
-            "layers.{bid}.mlp.down_proj.weight", #EAGLE
+            "layers.{bid}.mlp.down_proj", #EAGLE
         ),
 
         MODEL_TENSOR.FFN_DOWN_EXP: (
@@ -404,8 +404,9 @@ class TensorNameMap:
         ),
 
         MODEL_TENSOR.FC: (
-            "fc.weight", #EAGLE
+            "fc", #EAGLE
         ),
+        
 
         MODEL_TENSOR.ATTN_Q_NORM: (
             "language_model.encoder.layers.{bid}.self_attention.q_layernorm",
