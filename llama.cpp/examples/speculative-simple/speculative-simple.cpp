@@ -141,6 +141,33 @@ int main(int argc, char ** argv) {
 
     const auto t_dec_start = ggml_time_us();
 
+    /*
+    // --- Extract hidden state after first target model run ---
+    // 1. Decode the prompt in the target model
+    llama_batch batch_prompt = llama_batch_get_one(inp.data(), inp.size());
+    llama_decode(ctx_tgt, batch_prompt);
+
+    // 2. Get the hidden state from the last layer
+    const int n_layers = llama_model_n_layer(model_tgt);
+    const int n_embd = llama_model_n_embd(model_tgt);
+    float * hidden_state = llama_get_embeddings_ith(ctx_tgt, inp.size()-1); // 마지막 토큰의 hidden state 추출
+
+    if (hidden_state == nullptr) {
+        LOG_ERR("%s: Failed to get hidden state from target model\n", __func__);
+        return 1;
+    }
+
+    // 3. Set the hidden state as input embedding for the draft model
+    //    - Create a tensor for the embedding
+    struct ggml_tensor * embd_tensor = ggml_new_tensor_2d(ctx_dft->ctx, GGML_TYPE_F32, n_embd, 1);
+    //    - Copy the hidden state to the tensor
+    memcpy(embd_tensor->data, hidden_state, n_embd * ggml_element_size(embd_tensor));
+    //    - Set the tensor as input embedding
+    ctx_dft->inp_embd = embd_tensor;
+    ggml_set_input(ctx_dft->inp_embd);
+    // --- End of hidden state extraction and setting ---
+    */
+    
     while (true) {
         // optionally, generate draft tokens that can be appended to the target batch
         //
@@ -170,7 +197,7 @@ int main(int argc, char ** argv) {
 
             //LOG_DBG("target batch: %s\n", string_from(ctx_tgt, batch_tgt).c_str());
 
-            llama_decode(ctx_tgt, batch_tgt);
+            llama_decode(ctx_tgt, batch_tgt); //여기가 타겟 모델 forward 시작점인듯
         }
 
         // sample from the full target batch and return the accepted tokens based on the target sampler

@@ -1728,6 +1728,10 @@ struct llm_build_context {
         return gf;
     }
 
+    struct ggml_cgraph * build_lmhead() {
+        
+    }
+
     struct ggml_cgraph * build_eagle() {
         struct ggml_cgraph * gf = ggml_new_graph_custom(ctx0, model.max_nodes(), false);
 
@@ -8850,242 +8854,473 @@ static int llama_prepare_ubatch(
 // return positive int on warning
 // return negative int on error
 //
+// static int llama_decode_impl(
+//          llama_context & lctx,
+//            llama_batch   inp_batch) {
+
+//     lctx.is_encoding = false;
+
+//     if (inp_batch.n_tokens == 0) {
+//         LLAMA_LOG_ERROR("%s: n_tokens == 0\n", __func__);
+//         return -1;
+//     }
+
+//     // temporarily allocate memory for the input batch if needed
+//     llama_batch_allocr batch_allocr(inp_batch, inp_batch.pos ? -1 : lctx.kv_self.max_pos() + 1);
+//     const llama_batch & batch = batch_allocr.batch;
+
+//     const auto & model   = lctx.model;
+//     const auto & vocab   = model.vocab;
+//     const auto & hparams = model.hparams;
+//     const auto & cparams = lctx.cparams;
+
+//     if (lctx.t_compute_start_us == 0) {
+//         lctx.t_compute_start_us = ggml_time_us();
+//     }
+//     auto & kv_self = lctx.kv_self;
+//     llama_kv_slot_restorer kv_slot_restorer(kv_self);
+
+//     const int64_t n_embd  = hparams.n_embd;
+//     const int64_t n_vocab = vocab.n_tokens();
+
+//     uint32_t n_outputs = 0;
+//     uint32_t n_outputs_prev = 0;
+
+//     {
+//         const int ret = llama_prepare_sbatch(lctx, batch, n_outputs);
+//         if (ret != 0) {
+//             return ret;
+//         }
+//     }
+
+//     while (lctx.sbatch.n_tokens > 0) {
+//         llama_ubatch ubatch;
+//         {
+//             const int ret = llama_prepare_ubatch(lctx, kv_slot_restorer, ubatch, n_outputs, batch.n_tokens);
+//             if (ret != 0) {
+//                 return ret;
+//             }
+//         }
+
+//         const int         n_threads  = ubatch.n_tokens == 1 ? cparams.n_threads : cparams.n_threads_batch;
+//         ggml_threadpool_t threadpool = ubatch.n_tokens == 1 ? lctx.threadpool   : lctx.threadpool_batch;
+
+//         GGML_ASSERT(n_threads > 0);
+
+//         //printf("kv_self.n = %5d, kv_self.used = %5d, kv_self.head = %5d\n", kv_self.n, kv_self.used, kv_self.head);
+
+//         ggml_backend_sched_reset(lctx.sched.get());
+//         ggml_backend_sched_set_eval_callback(lctx.sched.get(), lctx.cparams.cb_eval, lctx.cparams.cb_eval_user_data);
+
+//         ggml_cgraph * gf = llama_build_graph(lctx, ubatch, false);
+
+//         // the output is always the last tensor in the graph
+//         struct ggml_tensor * res  = ggml_graph_node(gf, -1);
+//         struct ggml_tensor * embd = ggml_graph_node(gf, -2);
+
+//         if (lctx.n_outputs == 0) {
+//             // no output
+//             res  = nullptr;
+//             embd = nullptr;
+//         } else if (cparams.embeddings) {
+//             res  = nullptr; // do not extract logits for embedding case
+//             embd = nullptr;
+//             for (int i = ggml_graph_n_nodes(gf) - 1; i >= 0; --i) {
+//                 if (strcmp(ggml_graph_node(gf, i)->name, "result_embd_pooled") == 0) {
+//                     embd = ggml_graph_node(gf, i);
+//                     break;
+//                 }
+//             }
+//             GGML_ASSERT(embd != nullptr && "missing embeddings tensor");
+//         } else {
+//             embd = nullptr; // do not extract embeddings when not needed
+//             GGML_ASSERT(strcmp(res->name, "result_output") == 0 && "missing result_output tensor");
+//         }
+
+//         // LLAMA_LOG_INFO("graph build time: %.3f ms (%d nodes, %d leafs)\n", (ggml_time_us() - t_start_us)/1000.0, gf->n_nodes, gf->n_leafs);
+
+//         ggml_backend_sched_alloc_graph(lctx.sched.get(), gf);
+
+//         llama_set_inputs(lctx, ubatch);
+
+//         const auto compute_status = llama_graph_compute(lctx, gf, n_threads, threadpool);
+//         if (compute_status != GGML_STATUS_SUCCESS) {
+//             kv_slot_restorer.restore(kv_self);
+//             switch (compute_status) {
+//                 case GGML_STATUS_ABORTED:
+//                     return 2;
+//                 case GGML_STATUS_ALLOC_FAILED:
+//                     return -2;
+//                 case GGML_STATUS_FAILED:
+//                 default:
+//                     return -3;
+//             }
+//         }
+
+//         // update the kv ring buffer
+//         {
+//             kv_self.head += ubatch.n_tokens;
+
+//             // Ensure kv cache head points to a valid index.
+//             if (kv_self.head >= kv_self.size) {
+//                 kv_self.head = 0;
+//             }
+//         }
+
+//         // plot the computation graph in dot format (for debugging purposes)
+//         //if (n_past%100 == 0) {
+//         //    ggml_graph_dump_dot(gf, NULL, "llama.dot");
+//         //}
+
+//         // extract logits
+//         if (res) {
+//             ggml_backend_t backend_res = ggml_backend_sched_get_tensor_backend(lctx.sched.get(), res);
+//             GGML_ASSERT(backend_res != nullptr);
+//             GGML_ASSERT(lctx.logits != nullptr);
+
+//             float * logits_out = lctx.logits + n_outputs_prev*n_vocab;
+//             const int32_t n_outputs_new = lctx.n_outputs;
+
+//             if (n_outputs_new) {
+//                 GGML_ASSERT( n_outputs_prev + n_outputs_new <= n_outputs);
+//                 GGML_ASSERT((n_outputs_prev + n_outputs_new)*n_vocab <= (int64_t) lctx.logits_size);
+//                 ggml_backend_tensor_get_async(backend_res, res, logits_out, 0, n_outputs_new*n_vocab*sizeof(float));
+//             }
+//         }
+
+//         // extract embeddings
+//         if (embd) {
+//             ggml_backend_t backend_embd = ggml_backend_sched_get_tensor_backend(lctx.sched.get(), embd);
+//             GGML_ASSERT(backend_embd != nullptr);
+
+//             switch (cparams.pooling_type) {
+//                 case LLAMA_POOLING_TYPE_NONE:
+//                     {
+//                         // extract token embeddings
+//                         GGML_ASSERT(lctx.embd != nullptr);
+//                         float * embd_out = lctx.embd + n_outputs_prev*n_embd;
+//                         const int32_t n_outputs_new = lctx.n_outputs;
+
+//                         if (n_outputs_new) {
+//                             GGML_ASSERT( n_outputs_prev + n_outputs_new <= n_outputs);
+//                             GGML_ASSERT((n_outputs_prev + n_outputs_new)*n_embd <= (int64_t) lctx.embd_size);
+//                             ggml_backend_tensor_get_async(backend_embd, embd, embd_out, 0, n_outputs_new*n_embd*sizeof(float));
+//                         }
+//                     } break;
+//                 case LLAMA_POOLING_TYPE_MEAN:
+//                 case LLAMA_POOLING_TYPE_CLS:
+//                 case LLAMA_POOLING_TYPE_LAST:
+//                     {
+//                         // extract sequence embeddings (cleared before processing each batch)
+//                         auto & embd_seq_out = lctx.embd_seq;
+
+//                         for (uint32_t s = 0; s < ubatch.n_seqs; ++s) {
+//                             const llama_seq_id seq_id = ubatch.seq_id[s][0];
+//                             if (embd_seq_out.find(seq_id) != embd_seq_out.end()) {
+//                                 continue;
+//                             }
+//                             embd_seq_out[seq_id].resize(n_embd);
+//                             ggml_backend_tensor_get_async(backend_embd, embd, embd_seq_out[seq_id].data(), (n_embd*seq_id)*sizeof(float), n_embd*sizeof(float));
+//                         }
+//                     } break;
+//                 case LLAMA_POOLING_TYPE_RANK:
+//                     {
+//                         // extract the rerank score - a single float per sequence
+//                         auto & embd_seq_out = lctx.embd_seq;
+
+//                         for (uint32_t s = 0; s < ubatch.n_seqs; ++s) {
+//                             const llama_seq_id seq_id = ubatch.seq_id[s][0];
+//                             if (embd_seq_out.find(seq_id) != embd_seq_out.end()) {
+//                                 continue;
+//                             }
+//                             embd_seq_out[seq_id].resize(1);
+//                             ggml_backend_tensor_get_async(backend_embd, embd, embd_seq_out[seq_id].data(), (seq_id)*sizeof(float), sizeof(float));
+//                         }
+//                     } break;
+//                 case LLAMA_POOLING_TYPE_UNSPECIFIED:
+//                     {
+//                         GGML_ABORT("unknown pooling type");
+//                     }
+//             }
+//         }
+//         n_outputs_prev += lctx.n_outputs;
+//     }
+
+//     // set output mappings
+//     {
+//         bool sorted_output = true;
+
+//         GGML_ASSERT(lctx.sbatch.out_ids.size() == n_outputs);
+
+//         for (size_t i = 0; i < n_outputs; ++i) {
+//             size_t out_id = lctx.sbatch.out_ids[i];
+//             lctx.output_ids[out_id] = i;
+//             if (out_id != i) {
+//                 sorted_output = false;
+//             }
+//         }
+
+//         if (sorted_output) {
+//             lctx.sbatch.out_ids.clear();
+//         }
+//     }
+
+//     // set to total number of outputs in the batch, for use in llama_get_logits_ith
+//     lctx.n_outputs = n_outputs;
+
+//     // wait for the computation to finish (automatically done when obtaining the model output)
+//     //llama_synchronize(&lctx);
+
+//     // decide if we need to defrag the kv cache
+//     if (cparams.causal_attn && cparams.defrag_thold > 0.0f) {
+//         // - do not defrag small contexts (i.e. < 2048 tokens)
+//         // - count the padding towards the number of used tokens
+//         const float fragmentation = kv_self.n >= 2048 ? std::max(0.0f, 1.0f - float(kv_self.used + llama_kv_cache_get_padding(cparams))/float(kv_self.n)) : 0.0f;
+
+//         // queue defragmentation for next llama_kv_cache_update
+//         if (fragmentation > cparams.defrag_thold) {
+//             LLAMA_LOG_DEBUG("%s: fragmentation: %.2f - requesting defrag\n", __func__, fragmentation);
+
+//             llama_kv_cache_defrag(kv_self);
+//         }
+//     }
+
+//     // Reset state for the next token before backend sync, to allow the CPU activities in the reset to
+//     // overlap with device computation.
+//     ggml_backend_sched_reset(lctx.sched.get());
+
+//     return 0;
+// }
+
+// llama_context와 llama_batch를 받아 디코딩을 수행하는 내부 구현 함수
 static int llama_decode_impl(
-         llama_context & lctx,
-           llama_batch   inp_batch) {
+    llama_context & lctx,     // llama 컨텍스트 참조 (모델, KV 캐시, 파라미터, 버퍼 등 포함)
+    llama_batch   inp_batch) { // 처리할 토큰 정보가 담긴 입력 배치
 
-    lctx.is_encoding = false;
+// 현재 단계를 디코딩으로 표시 (인코딩 단계와 구분하기 위함일 수 있음)
+lctx.is_encoding = false;
 
-    if (inp_batch.n_tokens == 0) {
-        LLAMA_LOG_ERROR("%s: n_tokens == 0\n", __func__);
-        return -1;
+// 1. 입력 유효성 검사
+if (inp_batch.n_tokens == 0) { // 처리할 토큰이 없으면 에러
+    LLAMA_LOG_ERROR("%s: n_tokens == 0\n", __func__);
+    return -1;
+}
+
+// 2. 입력 배치 준비 및 임시 메모리 할당 (필요시)
+// llama_batch_allocr: 입력 배치 처리를 위한 헬퍼 클래스.
+// 필요에 따라 배치 데이터 재구성 또는 임시 메모리 할당을 수행할 수 있음.
+// inp_batch.pos ? ... : ... : 입력 배치에 위치 정보가 있는지 여부에 따라 시작 위치 결정 로직일 수 있음.
+llama_batch_allocr batch_allocr(inp_batch, inp_batch.pos ? -1 : lctx.kv_self.max_pos() + 1);
+const llama_batch & batch = batch_allocr.batch; // 실제 처리될 배치 (원본 또는 임시 할당된 것)
+
+// 3. 컨텍스트 및 모델 정보 참조 설정
+const auto & model   = lctx.model;       // 모델 객체 참조
+const auto & vocab   = model.vocab;      // 어휘 사전 참조
+const auto & hparams = model.hparams;    // 모델 하이퍼파라미터 참조
+const auto & cparams = lctx.cparams;     // 컨텍스트 생성 파라미터 참조
+
+// 계산 시작 시간 기록 (아직 기록되지 않았다면)
+if (lctx.t_compute_start_us == 0) {
+    lctx.t_compute_start_us = ggml_time_us();
+}
+auto & kv_self = lctx.kv_self; // KV 캐시 참조
+// llama_kv_slot_restorer: RAII 객체. 디코딩 중 오류 발생 시 KV 캐시 슬롯 상태를 안전하게 복원하기 위함.
+llama_kv_slot_restorer kv_slot_restorer(kv_self);
+
+// 모델 파라미터 (임베딩 차원, 어휘 사전 크기)
+const int64_t n_embd  = hparams.n_embd;
+const int64_t n_vocab = vocab.n_tokens();
+
+// 4. 배치 처리 루프 (입력 배치를 더 작은 단위로 나누어 처리)
+uint32_t n_outputs = 0;       // 전체 배치에서 출력(로짓/임베딩)이 필요한 토큰 수
+uint32_t n_outputs_prev = 0; // 이전 서브-배치까지 처리된 출력 토큰 수
+
+// 4.1. 정적 배치(sbatch) 준비
+// llama_prepare_sbatch: 입력 배치(batch)를 분석하여 정적 배치(lctx.sbatch)를 준비.
+// 출력 필요 토큰 식별, 정렬 등 효율적 처리를 위한 사전 작업 수행. n_outputs 업데이트.
+{
+    const int ret = llama_prepare_sbatch(lctx, batch, n_outputs);
+    if (ret != 0) { // 준비 실패 시 에러 반환
+        return ret;
     }
+}
 
-    // temporarily allocate memory for the input batch if needed
-    llama_batch_allocr batch_allocr(inp_batch, inp_batch.pos ? -1 : lctx.kv_self.max_pos() + 1);
-    const llama_batch & batch = batch_allocr.batch;
-
-    const auto & model   = lctx.model;
-    const auto & vocab   = model.vocab;
-    const auto & hparams = model.hparams;
-    const auto & cparams = lctx.cparams;
-
-    if (lctx.t_compute_start_us == 0) {
-        lctx.t_compute_start_us = ggml_time_us();
-    }
-    auto & kv_self = lctx.kv_self;
-    llama_kv_slot_restorer kv_slot_restorer(kv_self);
-
-    const int64_t n_embd  = hparams.n_embd;
-    const int64_t n_vocab = vocab.n_tokens();
-
-    uint32_t n_outputs = 0;
-    uint32_t n_outputs_prev = 0;
-
+// 4.2. 업데이트 배치(ubatch) 처리 루프
+// sbatch에 남은 토큰이 없을 때까지 반복하여 작은 업데이트 배치(ubatch) 단위로 처리.
+while (lctx.sbatch.n_tokens > 0) {
+    llama_ubatch ubatch; // 현재 처리할 업데이트 배치
+    // 4.2.1. 업데이트 배치(ubatch) 준비
+    // llama_prepare_ubatch: sbatch에서 처리할 만큼의 토큰을 가져와 ubatch 구성.
+    // sbatch에서 해당 토큰 제거. KV 슬롯 상태와 연관될 수 있음.
     {
-        const int ret = llama_prepare_sbatch(lctx, batch, n_outputs);
-        if (ret != 0) {
+        const int ret = llama_prepare_ubatch(lctx, kv_slot_restorer, ubatch, n_outputs, batch.n_tokens);
+        if (ret != 0) { // 준비 실패 시 에러 반환
             return ret;
         }
     }
 
-    while (lctx.sbatch.n_tokens > 0) {
-        llama_ubatch ubatch;
-        {
-            const int ret = llama_prepare_ubatch(lctx, kv_slot_restorer, ubatch, n_outputs, batch.n_tokens);
-            if (ret != 0) {
-                return ret;
+    // 4.2.2. 스레드 설정
+    // ubatch 크기(토큰 수)에 따라 적절한 스레드 수와 스레드 풀 선택.
+    // 토큰 1개는 저지연, 여러 개는 고처리량 스레드 풀 사용 가능성.
+    const int           n_threads  = ubatch.n_tokens == 1 ? cparams.n_threads : cparams.n_threads_batch;
+    ggml_threadpool_t threadpool = ubatch.n_tokens == 1 ? lctx.threadpool   : lctx.threadpool_batch;
+    GGML_ASSERT(n_threads > 0); // 스레드 수는 0보다 커야 함
+
+    // 4.2.3. 계산 스케줄러 설정
+    ggml_backend_sched_reset(lctx.sched.get()); // 스케줄러 상태 초기화
+    // 평가 콜백 설정 (옵션, 진행률 보고/취소 등에 사용 가능)
+    ggml_backend_sched_set_eval_callback(lctx.sched.get(), lctx.cparams.cb_eval, lctx.cparams.cb_eval_user_data);
+
+    // 4.2.4. 계산 그래프(Computation Graph) 빌드
+    // llama_build_graph: 현재 ubatch를 처리하기 위한 GGML 계산 그래프 생성.
+    // false 인자는 프롬프트 인코딩용이 아님을 의미할 수 있음.
+    ggml_cgraph * gf = llama_build_graph(lctx, ubatch, false);
+
+    // 4.2.5. 출력 텐서 식별
+    // 그래프의 마지막 노드가 로짓(res), 그 앞이 임베딩(embd)일 것이라는 규칙 사용.
+    struct ggml_tensor * res  = ggml_graph_node(gf, -1); // 로짓 텐서 (기본)
+    struct ggml_tensor * embd = ggml_graph_node(gf, -2); // 임베딩 관련 텐서 (기본)
+
+    if (lctx.n_outputs == 0) { // 출력이 필요 없는 경우
+        res  = nullptr;
+        embd = nullptr;
+    } else if (cparams.embeddings) { // 임베딩만 필요한 경우
+        res  = nullptr; // 로짓은 추출 안 함
+        embd = nullptr;
+        // "result_embd_pooled" 이름의 텐서를 직접 찾아 embd로 설정
+        for (int i = ggml_graph_n_nodes(gf) - 1; i >= 0; --i) {
+            if (strcmp(ggml_graph_node(gf, i)->name, "result_embd_pooled") == 0) {
+                embd = ggml_graph_node(gf, i);
+                break;
             }
         }
+        GGML_ASSERT(embd != nullptr && "missing embeddings tensor"); // 임베딩 텐서가 있어야 함
+    } else { // 로짓이 필요한 경우 (기본)
+        embd = nullptr; // 임베딩은 추출 안 함
+        GGML_ASSERT(strcmp(res->name, "result_output") == 0 && "missing result_output tensor"); // 로짓 텐서 이름 확인
+    }
 
-        const int         n_threads  = ubatch.n_tokens == 1 ? cparams.n_threads : cparams.n_threads_batch;
-        ggml_threadpool_t threadpool = ubatch.n_tokens == 1 ? lctx.threadpool   : lctx.threadpool_batch;
+    // 4.2.6. 그래프 메모리 할당 및 입력 설정
+    ggml_backend_sched_alloc_graph(lctx.sched.get(), gf); // 스케줄러를 통해 그래프 내 텐서 메모리 할당
+    llama_set_inputs(lctx, ubatch); // ubatch 데이터를 그래프의 입력 텐서에 설정
 
-        GGML_ASSERT(n_threads > 0);
-
-        //printf("kv_self.n = %5d, kv_self.used = %5d, kv_self.head = %5d\n", kv_self.n, kv_self.used, kv_self.head);
-
-        ggml_backend_sched_reset(lctx.sched.get());
-        ggml_backend_sched_set_eval_callback(lctx.sched.get(), lctx.cparams.cb_eval, lctx.cparams.cb_eval_user_data);
-
-        ggml_cgraph * gf = llama_build_graph(lctx, ubatch, false);
-
-        // the output is always the last tensor in the graph
-        struct ggml_tensor * res  = ggml_graph_node(gf, -1);
-        struct ggml_tensor * embd = ggml_graph_node(gf, -2);
-
-        if (lctx.n_outputs == 0) {
-            // no output
-            res  = nullptr;
-            embd = nullptr;
-        } else if (cparams.embeddings) {
-            res  = nullptr; // do not extract logits for embedding case
-            embd = nullptr;
-            for (int i = ggml_graph_n_nodes(gf) - 1; i >= 0; --i) {
-                if (strcmp(ggml_graph_node(gf, i)->name, "result_embd_pooled") == 0) {
-                    embd = ggml_graph_node(gf, i);
-                    break;
-                }
-            }
-            GGML_ASSERT(embd != nullptr && "missing embeddings tensor");
-        } else {
-            embd = nullptr; // do not extract embeddings when not needed
-            GGML_ASSERT(strcmp(res->name, "result_output") == 0 && "missing result_output tensor");
+    // 4.2.7. 계산 그래프 실행 (실제 순방향 계산)
+    const auto compute_status = llama_graph_compute(lctx, gf, n_threads, threadpool);
+    // 에러 처리: 계산 실패 시 KV 캐시 복원 후 에러 코드 반환
+    if (compute_status != GGML_STATUS_SUCCESS) {
+        kv_slot_restorer.restore(kv_self); // KV 캐시 상태 복원
+        switch (compute_status) {
+            case GGML_STATUS_ABORTED:      return 2;  // 중단됨
+            case GGML_STATUS_ALLOC_FAILED: return -2; // 할당 실패
+            case GGML_STATUS_FAILED:
+            default:                       return -3; // 기타 실패
         }
+    }
 
-        // LLAMA_LOG_INFO("graph build time: %.3f ms (%d nodes, %d leafs)\n", (ggml_time_us() - t_start_us)/1000.0, gf->n_nodes, gf->n_leafs);
+    // 4.2.8. KV 캐시 링 버퍼 헤드 업데이트
+    kv_self.head += ubatch.n_tokens; // 처리된 토큰 수만큼 헤드 이동
+    // 버퍼 끝에 도달하면 처음으로 순환
+    if (kv_self.head >= kv_self.size) {
+        kv_self.head = 0;
+    }
 
-        ggml_backend_sched_alloc_graph(lctx.sched.get(), gf);
-
-        llama_set_inputs(lctx, ubatch);
-
-        const auto compute_status = llama_graph_compute(lctx, gf, n_threads, threadpool);
-        if (compute_status != GGML_STATUS_SUCCESS) {
-            kv_slot_restorer.restore(kv_self);
-            switch (compute_status) {
-                case GGML_STATUS_ABORTED:
-                    return 2;
-                case GGML_STATUS_ALLOC_FAILED:
-                    return -2;
-                case GGML_STATUS_FAILED:
-                default:
-                    return -3;
-            }
+    // 4.2.9. 결과 추출 (로짓 또는 임베딩)
+    // 비동기적(async)으로 백엔드(GPU 등) 메모리에서 호스트(CPU) 메모리로 결과 복사
+    if (res) { // 로짓 추출
+        ggml_backend_t backend_res = ggml_backend_sched_get_tensor_backend(lctx.sched.get(), res);
+        // ... (Assertions) ...
+        float * logits_out = lctx.logits + n_outputs_prev*n_vocab; // 출력 버퍼 내 위치 계산
+        const int32_t n_outputs_new = lctx.n_outputs; // 현재 ubatch에서 나온 출력 수
+        if (n_outputs_new) {
+            // ... (Assertions) ...
+            // 비동기 복사 시작
+            ggml_backend_tensor_get_async(backend_res, res, logits_out, 0, n_outputs_new*n_vocab*sizeof(float));
         }
-
-        // update the kv ring buffer
-        {
-            kv_self.head += ubatch.n_tokens;
-
-            // Ensure kv cache head points to a valid index.
-            if (kv_self.head >= kv_self.size) {
-                kv_self.head = 0;
-            }
-        }
-
-        // plot the computation graph in dot format (for debugging purposes)
-        //if (n_past%100 == 0) {
-        //    ggml_graph_dump_dot(gf, NULL, "llama.dot");
-        //}
-
-        // extract logits
-        if (res) {
-            ggml_backend_t backend_res = ggml_backend_sched_get_tensor_backend(lctx.sched.get(), res);
-            GGML_ASSERT(backend_res != nullptr);
-            GGML_ASSERT(lctx.logits != nullptr);
-
-            float * logits_out = lctx.logits + n_outputs_prev*n_vocab;
-            const int32_t n_outputs_new = lctx.n_outputs;
-
-            if (n_outputs_new) {
-                GGML_ASSERT( n_outputs_prev + n_outputs_new <= n_outputs);
-                GGML_ASSERT((n_outputs_prev + n_outputs_new)*n_vocab <= (int64_t) lctx.logits_size);
-                ggml_backend_tensor_get_async(backend_res, res, logits_out, 0, n_outputs_new*n_vocab*sizeof(float));
-            }
-        }
-
-        // extract embeddings
-        if (embd) {
-            ggml_backend_t backend_embd = ggml_backend_sched_get_tensor_backend(lctx.sched.get(), embd);
-            GGML_ASSERT(backend_embd != nullptr);
-
-            switch (cparams.pooling_type) {
-                case LLAMA_POOLING_TYPE_NONE:
-                    {
-                        // extract token embeddings
-                        GGML_ASSERT(lctx.embd != nullptr);
-                        float * embd_out = lctx.embd + n_outputs_prev*n_embd;
-                        const int32_t n_outputs_new = lctx.n_outputs;
-
-                        if (n_outputs_new) {
-                            GGML_ASSERT( n_outputs_prev + n_outputs_new <= n_outputs);
-                            GGML_ASSERT((n_outputs_prev + n_outputs_new)*n_embd <= (int64_t) lctx.embd_size);
-                            ggml_backend_tensor_get_async(backend_embd, embd, embd_out, 0, n_outputs_new*n_embd*sizeof(float));
-                        }
-                    } break;
-                case LLAMA_POOLING_TYPE_MEAN:
-                case LLAMA_POOLING_TYPE_CLS:
-                case LLAMA_POOLING_TYPE_LAST:
-                    {
-                        // extract sequence embeddings (cleared before processing each batch)
-                        auto & embd_seq_out = lctx.embd_seq;
-
-                        for (uint32_t s = 0; s < ubatch.n_seqs; ++s) {
-                            const llama_seq_id seq_id = ubatch.seq_id[s][0];
-                            if (embd_seq_out.find(seq_id) != embd_seq_out.end()) {
-                                continue;
-                            }
-                            embd_seq_out[seq_id].resize(n_embd);
-                            ggml_backend_tensor_get_async(backend_embd, embd, embd_seq_out[seq_id].data(), (n_embd*seq_id)*sizeof(float), n_embd*sizeof(float));
-                        }
-                    } break;
-                case LLAMA_POOLING_TYPE_RANK:
-                    {
-                        // extract the rerank score - a single float per sequence
-                        auto & embd_seq_out = lctx.embd_seq;
-
-                        for (uint32_t s = 0; s < ubatch.n_seqs; ++s) {
-                            const llama_seq_id seq_id = ubatch.seq_id[s][0];
-                            if (embd_seq_out.find(seq_id) != embd_seq_out.end()) {
-                                continue;
-                            }
-                            embd_seq_out[seq_id].resize(1);
-                            ggml_backend_tensor_get_async(backend_embd, embd, embd_seq_out[seq_id].data(), (seq_id)*sizeof(float), sizeof(float));
-                        }
-                    } break;
-                case LLAMA_POOLING_TYPE_UNSPECIFIED:
-                    {
-                        GGML_ABORT("unknown pooling type");
+    }
+    if (embd) { // 임베딩 추출
+        ggml_backend_t backend_embd = ggml_backend_sched_get_tensor_backend(lctx.sched.get(), embd);
+        // ... (Assertions) ...
+        // 풀링(Pooling) 타입에 따라 다른 로직 수행
+        switch (cparams.pooling_type) {
+            case LLAMA_POOLING_TYPE_NONE: // 토큰별 임베딩
+                {
+                    float * embd_out = lctx.embd + n_outputs_prev*n_embd; // 출력 버퍼 내 위치 계산
+                    const int32_t n_outputs_new = lctx.n_outputs;
+                    if (n_outputs_new) {
+                        // ... (Assertions) ...
+                        // 비동기 복사 시작
+                        ggml_backend_tensor_get_async(backend_embd, embd, embd_out, 0, n_outputs_new*n_embd*sizeof(float));
                     }
-            }
-        }
-        n_outputs_prev += lctx.n_outputs;
-    }
-
-    // set output mappings
-    {
-        bool sorted_output = true;
-
-        GGML_ASSERT(lctx.sbatch.out_ids.size() == n_outputs);
-
-        for (size_t i = 0; i < n_outputs; ++i) {
-            size_t out_id = lctx.sbatch.out_ids[i];
-            lctx.output_ids[out_id] = i;
-            if (out_id != i) {
-                sorted_output = false;
-            }
-        }
-
-        if (sorted_output) {
-            lctx.sbatch.out_ids.clear();
-        }
-    }
-
-    // set to total number of outputs in the batch, for use in llama_get_logits_ith
-    lctx.n_outputs = n_outputs;
-
-    // wait for the computation to finish (automatically done when obtaining the model output)
-    //llama_synchronize(&lctx);
-
-    // decide if we need to defrag the kv cache
-    if (cparams.causal_attn && cparams.defrag_thold > 0.0f) {
-        // - do not defrag small contexts (i.e. < 2048 tokens)
-        // - count the padding towards the number of used tokens
-        const float fragmentation = kv_self.n >= 2048 ? std::max(0.0f, 1.0f - float(kv_self.used + llama_kv_cache_get_padding(cparams))/float(kv_self.n)) : 0.0f;
-
-        // queue defragmentation for next llama_kv_cache_update
-        if (fragmentation > cparams.defrag_thold) {
-            LLAMA_LOG_DEBUG("%s: fragmentation: %.2f - requesting defrag\n", __func__, fragmentation);
-
-            llama_kv_cache_defrag(kv_self);
+                } break;
+            case LLAMA_POOLING_TYPE_MEAN: // 시퀀스 평균 풀링
+            case LLAMA_POOLING_TYPE_CLS:  // CLS 토큰 풀링
+            case LLAMA_POOLING_TYPE_LAST: // 마지막 토큰 풀링
+                {
+                    // 시퀀스 임베딩 추출 (시퀀스 ID별로 저장)
+                    auto & embd_seq_out = lctx.embd_seq; // 시퀀스 임베딩 저장 맵
+                    for (uint32_t s = 0; s < ubatch.n_seqs; ++s) {
+                        const llama_seq_id seq_id = ubatch.seq_id[s][0];
+                        if (embd_seq_out.find(seq_id) != embd_seq_out.end()) continue; // 이미 있으면 건너뛰기
+                        embd_seq_out[seq_id].resize(n_embd); // 벡터 크기 조정
+                        // 비동기 복사 시작 (오프셋 계산 주의)
+                        ggml_backend_tensor_get_async(backend_embd, embd, embd_seq_out[seq_id].data(), (n_embd*seq_id)*sizeof(float), n_embd*sizeof(float));
+                    }
+                } break;
+            case LLAMA_POOLING_TYPE_RANK: // Rerank 점수 추출
+                 {
+                    // 시퀀스별 단일 점수(float) 추출
+                    auto & embd_seq_out = lctx.embd_seq;
+                     for (uint32_t s = 0; s < ubatch.n_seqs; ++s) {
+                        const llama_seq_id seq_id = ubatch.seq_id[s][0];
+                        if (embd_seq_out.find(seq_id) != embd_seq_out.end()) continue;
+                        embd_seq_out[seq_id].resize(1); // 크기는 1
+                        // 비동기 복사 시작 (오프셋 계산 주의)
+                        ggml_backend_tensor_get_async(backend_embd, embd, embd_seq_out[seq_id].data(), (seq_id)*sizeof(float), sizeof(float));
+                     }
+                 } break;
+            case LLAMA_POOLING_TYPE_UNSPECIFIED: GGML_ABORT("unknown pooling type");
         }
     }
+    // 처리된 출력 토큰 수 누적
+    n_outputs_prev += lctx.n_outputs;
+} // end while (lctx.sbatch.n_tokens > 0)
 
-    // Reset state for the next token before backend sync, to allow the CPU activities in the reset to
-    // overlap with device computation.
-    ggml_backend_sched_reset(lctx.sched.get());
+// 5. 후처리 및 최종화
+// 5.1. 출력 ID 매핑 설정
+// llama_prepare_sbatch에서 토큰 순서가 변경되었을 수 있으므로,
+// 원본 입력 배치에서의 인덱스(out_id)와 실제 출력 버퍼에서의 인덱스(i)를 매핑.
+{
+    bool sorted_output = true;
+    GGML_ASSERT(lctx.sbatch.out_ids.size() == n_outputs);
+    for (size_t i = 0; i < n_outputs; ++i) {
+        size_t out_id = lctx.sbatch.out_ids[i];
+        lctx.output_ids[out_id] = i; // 매핑 정보 저장
+        if (out_id != i) sorted_output = false;
+    }
+    if (sorted_output) lctx.sbatch.out_ids.clear(); // 정렬된 경우 불필요
+}
 
-    return 0;
+// 5.2. 총 출력 수 설정
+// llama_get_logits_ith 등에서 사용하기 위해 컨텍스트에 총 출력 수 기록
+lctx.n_outputs = n_outputs;
+
+// 5.3. KV 캐시 조각 모음(Defragmentation) 검사
+if (cparams.causal_attn && cparams.defrag_thold > 0.0f) {
+    // 너무 작은 컨텍스트는 제외, 패딩 고려하여 사용률 계산
+    const float fragmentation = kv_self.n >= 2048 ? std::max(0.0f, 1.0f - float(kv_self.used + llama_kv_cache_get_padding(cparams))/float(kv_self.n)) : 0.0f;
+    // 조각률이 임계값 초과 시 다음 업데이트 시 조각 모음 요청
+    if (fragmentation > cparams.defrag_thold) {
+        LLAMA_LOG_DEBUG("%s: fragmentation: %.2f - requesting defrag\n", __func__, fragmentation);
+        llama_kv_cache_defrag(kv_self);
+    }
+}
+
+// 5.4. 스케줄러 리셋
+// 백엔드 동기화 전에 스케줄러를 리셋하여 CPU 작업과 디바이스 계산 오버랩 시도
+ggml_backend_sched_reset(lctx.sched.get());
+
+// 6. 성공 반환
+return 0;
 }
 
 static int llama_decode_impl_init(

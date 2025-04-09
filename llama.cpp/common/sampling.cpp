@@ -297,49 +297,126 @@ void common_perf_print(const struct llama_context * ctx, const struct common_sam
     }
 }
 
+// llama_token common_sampler_sample(struct common_sampler * gsmpl, struct llama_context * ctx, int idx, bool grammar_first) {
+//     gsmpl->set_logits(ctx, idx);
+
+//     auto & grmr  = gsmpl->grmr;
+//     auto & chain = gsmpl->chain;
+//     auto & cur_p = gsmpl->cur_p; // initialized by set_logits
+
+//     if (grammar_first) {
+//         llama_sampler_apply(grmr, &cur_p);
+//     }
+
+//     llama_sampler_apply(chain, &cur_p);
+
+//     GGML_ASSERT(cur_p.selected != -1 && "no selected token during sampling - check your sampling configuration");
+
+//     const llama_token id = cur_p.data[cur_p.selected].id;
+
+//     if (grammar_first) {
+//         return id;
+//     }
+
+//     // check if it the sampled token fits the grammar
+//     {
+//         llama_token_data       single_token_data       = { id, 1.0f, 0.0f };
+//         llama_token_data_array single_token_data_array = { &single_token_data, 1, -1, false };
+
+//         llama_sampler_apply(grmr, &single_token_data_array);
+
+//         const bool is_valid = single_token_data_array.data[0].logit != -INFINITY;
+//         if (is_valid) {
+//             return id;
+//         }
+//     }
+
+//     // resampling:
+//     // if the token is not valid, sample again, but first apply the grammar sampler and then the sampling chain
+//     gsmpl->set_logits(ctx, idx);
+
+//     llama_sampler_apply(grmr,  &cur_p);
+//     llama_sampler_apply(chain, &cur_p);
+
+//     GGML_ASSERT(cur_p.selected != -1 && "no selected token during re-sampling - check your sampling configuration");
+
+//     return cur_p.data[cur_p.selected].id;
+// }
+
+// 샘플러 객체(gsmpl), 컨텍스트(ctx), 로짓 인덱스(idx), 문법 우선 적용 여부(grammar_first)를 받아
+// 다음 토큰 ID를 샘플링하여 반환하는 함수
 llama_token common_sampler_sample(struct common_sampler * gsmpl, struct llama_context * ctx, int idx, bool grammar_first) {
+    // 1. 초기 설정: 로짓 가져오기
+    // gsmpl 내부 함수를 호출하여 ctx에서 idx 위치의 로짓을 가져와
+    // 샘플러 내부의 후보 토큰 배열(cur_p)을 초기화함.
     gsmpl->set_logits(ctx, idx);
 
-    auto & grmr  = gsmpl->grmr;
-    auto & chain = gsmpl->chain;
-    auto & cur_p = gsmpl->cur_p; // initialized by set_logits
+    // 2. 샘플러 객체 내 멤버 참조 설정
+    auto & grmr  = gsmpl->grmr;  // 문법(grammar) 샘플러 참조
+    auto & chain = gsmpl->chain; // 일반 샘플링 방법들의 체인(chain) 참조 (예: top-k, top-p, 온도 등)
+    auto & cur_p = gsmpl->cur_p; // 현재 후보 토큰 및 확률 배열 참조 (set_logits에서 초기화됨)
 
+    // 3. 첫 번째 샘플링 시도
     if (grammar_first) {
+        // 3.1. 문법 우선 적용 (grammar_first = true)
+        // 문법 샘플러(grmr)를 먼저 적용하여 문법에 맞지 않는 토큰들의 확률을 0 또는 음의 무한대로 만듦.
         llama_sampler_apply(grmr, &cur_p);
     }
 
+    // 3.2. 일반 샘플링 체인 적용
+    // 온도, top-k, top-p, Mirostat 등 설정된 샘플링 방법들을 순차적으로 적용.
+    // 이 과정에서 최종적으로 하나의 토큰이 선택됨 (cur_p.selected에 인덱스 저장).
     llama_sampler_apply(chain, &cur_p);
 
+    // 샘플링 후 토큰이 선택되었는지 확인 (설정 오류 등으로 선택되지 않을 수 있음)
     GGML_ASSERT(cur_p.selected != -1 && "no selected token during sampling - check your sampling configuration");
 
+    // 선택된 토큰의 ID 가져오기
     const llama_token id = cur_p.data[cur_p.selected].id;
 
+    // 4. 결과 반환 또는 문법 재검사/재샘플링
     if (grammar_first) {
+        // 4.1. 문법이 먼저 적용된 경우:
+        // 이미 문법 검사를 통과한 상태에서 샘플링되었으므로, 선택된 id는 항상 문법에 유효함.
+        // 따라서 바로 반환.
         return id;
     }
 
-    // check if it the sampled token fits the grammar
+    // 4.2. 문법이 나중에 적용되는 경우 (grammar_first = false):
+    //    - 일반 샘플링 체인에서 선택된 'id'가 문법에 맞는지 확인해야 함.
     {
+        // 선택된 토큰 'id' 하나만 포함하는 임시 데이터 배열 생성
         llama_token_data       single_token_data       = { id, 1.0f, 0.0f };
         llama_token_data_array single_token_data_array = { &single_token_data, 1, -1, false };
 
+        // 문법 샘플러(grmr)를 이 단일 토큰 배열에 적용
         llama_sampler_apply(grmr, &single_token_data_array);
 
+        // 문법 샘플러 적용 후 로짓(logit) 값이 -INFINITY가 아니면 유효한 토큰임
         const bool is_valid = single_token_data_array.data[0].logit != -INFINITY;
         if (is_valid) {
+            // 유효하다면, 원래 샘플링된 id 반환
             return id;
         }
     }
 
-    // resampling:
-    // if the token is not valid, sample again, but first apply the grammar sampler and then the sampling chain
+    // 4.3. 재샘플링 (Resampling):
+    //    - 일반 샘플링으로 선택된 토큰 'id'가 문법 검사를 통과하지 못한 경우.
+    //    - 문법을 먼저 적용한 후 다시 샘플링을 수행해야 함.
+
+    // 중요: 재샘플링을 위해 로짓을 다시 원본 상태로 설정해야 함!
+    // 이전 llama_sampler_apply(chain, ...) 호출이 cur_p를 변경했기 때문.
     gsmpl->set_logits(ctx, idx);
 
+    // 이번에는 문법 샘플러(grmr)를 *먼저* 적용하여 유효한 토큰들만 남김.
     llama_sampler_apply(grmr,  &cur_p);
+    // 그 다음, 문법을 통과한 토큰들 중에서 일반 샘플링 체인(chain)을 적용하여 최종 토큰 선택.
     llama_sampler_apply(chain, &cur_p);
 
+    // 재샘플링 후에도 토큰이 선택되었는지 확인
     GGML_ASSERT(cur_p.selected != -1 && "no selected token during re-sampling - check your sampling configuration");
 
+    // 재샘플링을 통해 선택된 (문법에 맞는) 토큰 ID 반환
     return cur_p.data[cur_p.selected].id;
 }
 

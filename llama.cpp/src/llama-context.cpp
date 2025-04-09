@@ -590,6 +590,12 @@ uint32_t llama_n_ctx(const struct llama_context * ctx) {
     return ctx->cparams.n_ctx;
 }
 
+/*
+ggml_context llama_ctx(const struct llama_context * ctx) {
+    return ctx->ctx;
+}
+*/
+
 uint32_t llama_n_batch(const struct llama_context * ctx) {
     return ctx->cparams.n_batch;
 }
