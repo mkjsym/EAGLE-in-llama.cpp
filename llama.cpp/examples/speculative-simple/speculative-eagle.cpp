@@ -507,7 +507,7 @@ int main(int argc, char ** argv) {
 
     //배치 처리하는 부분 수정해야됨!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     batch_tgt = llama_batch_get_one(&new_token_id, 1);
-    common_batch_add(batch_tgt, id_last, n_past++, { 0 }, true);
+    // common_batch_add(batch_tgt, id_last, n_past++, { 0 }, true);
 
     // 2. Get the hidden state from the last layer
     const int n_layers = llama_model_n_layer(model_tgt);
