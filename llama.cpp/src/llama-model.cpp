@@ -1292,7 +1292,7 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
         pimpl->gpu_buft_list.emplace(dev, std::move(buft_list));
     }
 
-    LLAMA_LOG_INFO("%s: loading model tensors, this can take a while... (mmap = %s)\n", __func__, ml.use_mmap ? "true" : "false");
+    //LLAMA_LOG_INFO("%s: loading model tensors, this can take a while... (mmap = %s)\n", __func__, ml.use_mmap ? "true" : "false");
 
     // calculate the split points
     bool all_zero = tensor_split == nullptr || std::all_of(tensor_split, tensor_split + n_devices(), [](float x) { return x == 0.0f; });
@@ -1310,7 +1310,7 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
         std::copy(tensor_split, tensor_split + n_devices(), splits.begin());
     }
 
-    LLAMA_LOG_INFO("%s: loading model tensors, this can take a while... (mmap = %s)\n", __func__, ml.use_mmap ? "true" : "false");
+    //LLAMA_LOG_INFO("%s: loading model tensors, this can take a while... (mmap = %s)\n", __func__, ml.use_mmap ? "true" : "false");
 
     // sum and normalize the splits to get the split points
     float split_sum = 0.0f;
@@ -1381,7 +1381,7 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
     const auto TENSOR_DUPLICATED   = llama_model_loader::TENSOR_DUPLICATED;
     const auto TENSOR_NOT_REQUIRED = llama_model_loader::TENSOR_NOT_REQUIRED;
 
-    LLAMA_LOG_INFO("%s: loading model tensors, this can take a while... (mmap = %s)\n", __func__, ml.use_mmap ? "true" : "false");
+    //LLAMA_LOG_INFO("%s: loading model tensors, this can take a while... (mmap = %s)\n", __func__, ml.use_mmap ? "true" : "false");
 
     // create tensors for the weights
     {
@@ -1411,18 +1411,18 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
         ggml_backend_buffer_type_t first_moved_from_buft = nullptr;
         ggml_backend_buffer_type_t first_moved_to_buft = nullptr;
 
-        LLAMA_LOG_INFO("%s: loading model tensors, this can take a while... (mmap = %s)\n", __func__, ml.use_mmap ? "true" : "false");
+        //LLAMA_LOG_INFO("%s: loading model tensors, this can take a while... (mmap = %s)\n", __func__, ml.use_mmap ? "true" : "false");
 
         auto create_tensor = [&](const LLM_TN_IMPL & tn, const std::initializer_list<int64_t> & ne, int flags) -> ggml_tensor * {
             ggml_tensor * t_meta = ml.get_tensor_meta(tn.str().c_str());
-            LLAMA_LOG_INFO("1, %s: %s\n", __func__, tn.str().c_str());
+            //LLAMA_LOG_INFO("1, %s: %s\n", __func__, tn.str().c_str());
             if (!t_meta) {
                 if (flags & TENSOR_NOT_REQUIRED) {
                     return nullptr;
                 }
                 throw std::runtime_error(format("missing tensor '%s'", tn.str().c_str()));
             }
-            LLAMA_LOG_INFO("2, %s: %s\n", __func__, tn.str().c_str());
+            //LLAMA_LOG_INFO("2, %s: %s\n", __func__, tn.str().c_str());
             // some models use the token embedding tensor as the output, but since these are used in different layers and with different ops
             // the tensor is duplicated
             // to handle this, we check if the tensor is duplicated, and if so, we assume that it is being loaded as the output tensor
@@ -1430,14 +1430,14 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
             if (tn.tensor == LLM_TENSOR_TOKEN_EMBD && flags & TENSOR_DUPLICATED) {
                 tn_tensor = LLM_TENSOR_OUTPUT;
             }
-            LLAMA_LOG_INFO("3, %s: %s\n", __func__, tn.str().c_str());
+            //LLAMA_LOG_INFO("3, %s: %s\n", __func__, tn.str().c_str());
             llm_tensor_info info;
             try {
                 info = llm_tensor_info_for(tn_tensor);
             } catch (const std::out_of_range & e) {
                 throw std::runtime_error(format("missing tensor info mapping for %s", tn.str().c_str()));
             }
-            LLAMA_LOG_INFO("4, %s: %s\n", __func__, tn.str().c_str());
+            //LLAMA_LOG_INFO("4, %s: %s\n", __func__, tn.str().c_str());
             // skip unused tensors
             if (info.op == GGML_OP_NONE) {
                 LLAMA_LOG_WARN("model has unused tensor %s -- ignoring\n", tn.str().c_str());
@@ -1445,7 +1445,7 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
 
                 return nullptr;
             }
-            LLAMA_LOG_INFO("5, %s: %s\n", __func__, tn.str().c_str());
+            //LLAMA_LOG_INFO("5, %s: %s\n", __func__, tn.str().c_str());
             // tensors with "bias" suffix are always used with GGML_OP_ADD
             ggml_op op;
             bool bias = tn.suffix != nullptr && strcmp(tn.suffix, "bias") == 0;
@@ -1454,7 +1454,7 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
             } else {
                 op = info.op;
             }
-            LLAMA_LOG_INFO("6, %s: %s\n", __func__, tn.str().c_str());
+            //LLAMA_LOG_INFO("6, %s: %s\n", __func__, tn.str().c_str());
             // sanity checks
             if (info.layer == LLM_TENSOR_LAYER_INPUT || info.layer == LLM_TENSOR_LAYER_OUTPUT) {
                 if (tn.bid != -1) {
@@ -1465,7 +1465,7 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                     GGML_ABORT("repeating layer tensor %s used without a layer number", tn.str().c_str());
                 }
             }
-            LLAMA_LOG_INFO("7, %s: %s\n", __func__, tn.str().c_str());
+            //LLAMA_LOG_INFO("7, %s: %s\n", __func__, tn.str().c_str());
             // select the buffer type for this tensor
             buft_list_t * buft_list;
             switch (info.layer) {
@@ -1486,7 +1486,7 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                     GGML_ABORT("invalid layer %d for tensor %s", info.layer, tn.str().c_str());
             }
 
-            LLAMA_LOG_INFO("8, %s: %s\n", __func__, tn.str().c_str());
+            //LLAMA_LOG_INFO("8, %s: %s\n", __func__, tn.str().c_str());
 
             ggml_backend_buffer_type_t buft = select_weight_buft(hparams, t_meta, op, *buft_list);
             if (!buft) {

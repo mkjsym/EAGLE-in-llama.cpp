@@ -1,297 +1,3 @@
-/*
-#include "arg.h"
-#include "common.h"
-#include "sampling.h"
-#include "speculative.h"
-#include "log.h"
-#include "llama.h"
-
-#include <cstdio>
-#include <cstring>
-#include <string>
-#include <vector>
-#include <iostream>
-
-int main(int argc, char ** argv) {
-    common_params params;
-
-    if (!common_params_parse(argc, argv, params, LLAMA_EXAMPLE_SPECULATIVE)) {
-        return 1;
-    }
-
-    if (params.n_predict < -1) {
-        LOG_ERR("%s: --n-predict must be >= -1\n", __func__);
-        return 1;
-    }
-
-    common_init(); //llama 로그 파일 생성
-
-    if (params.speculative.model.empty()) {
-        LOG_ERR("%s: --model-draft is required\n", __func__);
-        return 1;
-    }
-
-    // init llama.cpp
-    llama_backend_init();
-    llama_numa_init(params.numa);
-
-    llama_model * model_tgt = NULL;
-    //llama_model * model_dft = NULL;
-
-    llama_context * ctx_tgt = NULL;
-    llama_context * ctx_dft = NULL;
-
-    // load the target model
-    common_init_result llama_init_tgt = common_init_from_params(params); //target model, context 초기화
-
-    model_tgt = llama_init_tgt.model.get(); //llama_init_tgt 객체로부터 model 호출
-    ctx_tgt   = llama_init_tgt.context.get(); //llama_init_tgt 객체로부터 context 호출
-
-    const llama_vocab * vocab = llama_model_get_vocab(model_tgt); //model 객체로부터 vocab 호출
-
-    // load the draft model
-    params.devices      = params.speculative.devices;
-    params.model        = params.speculative.model;
-    params.n_ctx        = params.speculative.n_ctx;
-    params.n_batch      = params.speculative.n_ctx > 0 ? params.speculative.n_ctx : params.n_batch;
-    params.n_gpu_layers = params.speculative.n_gpu_layers;
-
-    if (params.speculative.cpuparams.n_threads > 0) {
-        params.cpuparams.n_threads = params.speculative.cpuparams.n_threads;
-    }
-
-    params.cpuparams_batch.n_threads = params.speculative.cpuparams_batch.n_threads;
-    common_init_result llama_init_dft = common_init_from_params(params); //draft model, context 초기화
-
-    //model_dft = llama_init_dft.model.get();
-    ctx_dft   = llama_init_dft.context.get(); //llama_init_dft 객체로부터 context 호출
-
-    if (!common_speculative_are_compatible(ctx_tgt, ctx_dft)) { //target model과 draft model이 호환되는지 검사
-        return 1;
-    }
-
-    // Tokenize the prompt
-    std::vector<llama_token> inp;
-    inp = common_tokenize(ctx_tgt, params.prompt, true, true); //target model과 호환되는 vocab을 내부에서 호출한 뒤 tokenize
-
-    if (llama_n_ctx(ctx_tgt) < (uint32_t) inp.size()) {
-        LOG_ERR("%s: the prompt exceeds the context size (%d tokens, ctx %d)\n", __func__, (int) inp.size(), llama_n_ctx(ctx_tgt));
-
-        return 1;
-    }
-
-    if (llama_n_batch(ctx_tgt) < (uint32_t) inp.size()) {
-        LOG_ERR("%s: the prompt exceeds the batch size (%d tokens, batch %d)\n", __func__, (int) inp.size(), llama_n_batch(ctx_tgt));
-
-        return 1;
-    }
-
-    LOG("\n\n");
-
-    for (auto id : inp) {
-        LOG("%s", common_token_to_piece(ctx_tgt, id).c_str());
-    }
-
-    // how many tokens to draft each time
-    int n_draft     = params.speculative.n_max;
-    int n_draft_min = params.speculative.n_min;
-
-    float p_min = params.speculative.p_min;
-
-    int n_predict = 0;
-    int n_drafted = 0;
-    int n_accept  = 0;
-
-    // used to determine end of generation
-    bool has_eos = false;
-
-    // ================================================
-    // everything until here is standard initialization
-    // the relevant stuff for speculative decoding starts here
-
-    const auto t_enc_start = ggml_time_us();
-
-    // target model sampling context
-    struct common_sampler * smpl = common_sampler_init(model_tgt, params.sampling); //target model과 호환되는 sampler 객체를 생성해 반환
-
-    std::cout <<"Model Initialized" << std::endl;
-
-    // eval the prompt
-    llama_decode_init(ctx_tgt, llama_batch_get_one(inp.data(), inp.size() - 1)); //이 부분은 뭐하는 건지 정확히 모르겠다.. 다시한번 체크
-
-    // note: keep the last token separate!
-    llama_token id_last = inp.back();
-
-    // all tokens currently in the target context
-    llama_tokens prompt_tgt(inp.begin(), inp.end() - 1);
-    prompt_tgt.reserve(llama_n_ctx(ctx_tgt)); //토큰화된 프롬프트에 target model의 컨텍스트 정보를 저장?
-
-    int n_past = inp.size() - 1;
-
-    // init the speculator
-    struct common_speculative_params params_spec; //speculator 구조체 생성, 변수 초기화
-    params_spec.n_draft = n_draft;
-    params_spec.n_reuse = llama_n_ctx(ctx_dft) - n_draft;
-    params_spec.p_min   = p_min;
-
-    struct common_speculative * spec = common_speculative_init(ctx_dft); //draft model의 context를 사용해서 speculative 구조체를 생성, speculative 구조체 내에는 연산을 위한 메모리 할당 등이 포함
-
-    llama_batch batch_tgt = llama_batch_init(llama_n_batch(ctx_tgt), 0, 1); //target model과 관련된 연산을 위한 메모리 할당(연산을 llama_batch라는 단위로 수행?)
-
-    const auto t_enc_end = ggml_time_us();
-
-    const auto t_dec_start = ggml_time_us();
-
-    
-    // --- Extract hidden state after first target model run ---
-    // 1. Decode the prompt in the target model
-    llama_batch batch_prompt = llama_batch_get_one(inp.data(), inp.size());
-    llama_decode(ctx_tgt, batch_prompt);
-
-    // 2. Get the hidden state from the last layer
-    const int n_layers = llama_model_n_layer(model_tgt);
-    const int n_embd = llama_model_n_embd(model_tgt);
-    float * hidden_state = llama_get_embeddings_ith(ctx_tgt, inp.size()-1); // 마지막 토큰의 hidden state 추출
-
-    if (hidden_state == nullptr) {
-        LOG_ERR("%s: Failed to get hidden state from target model\n", __func__);
-        return 1;
-    }
-
-    
-    // // 3. Set the hidden state as input embedding for the draft model
-    // //    - Create a tensor for the embedding
-    // struct ggml_tensor * embd_tensor = ggml_new_tensor_2d(ctx_dft->ctx, GGML_TYPE_F32, n_embd, 1);
-    // //    - Copy the hidden state to the tensor
-    // memcpy(embd_tensor->data, hidden_state, n_embd * ggml_element_size(embd_tensor));
-    // //    - Set the tensor as input embedding
-    // ctx_dft->inp_embd = embd_tensor;
-    // ggml_set_input(ctx_dft->inp_embd);
-    // // --- End of hidden state extraction and setting ---
-    
-    
-    while (true) {
-        // optionally, generate draft tokens that can be appended to the target batch
-        //
-        // this is the most important part of the speculation. the more probable tokens that are provided here
-        // the better the performance will be. in theory, this computation can be performed asynchronously and even
-        // offloaded to a remote device. it doesn't even have to be based on an LLM. instead, it can provide tokens
-        // from a cache or lookup tables.
-        //
-        llama_tokens draft = common_speculative_gen_draft(spec, params_spec, prompt_tgt, id_last); //spec: draft 모델의 speculative 구조체, params_spec: target 모델의 speculative 구조체
-
-        //LOG_DBG("draft: %s\n", string_from(ctx_dft, draft).c_str());
-
-        // always have a token to evaluate from before - id_last
-        common_batch_clear(batch_tgt);
-        common_batch_add  (batch_tgt, id_last, n_past++, { 0 }, true);
-
-        // evaluate the target model on [id_last, draft0, draft1, ..., draftN-1]
-        {
-            // do not waste time on small drafts
-            if (draft.size() < (size_t) n_draft_min) {
-                draft.clear();
-            }
-
-            for (size_t i = 0; i < draft.size(); ++i) {
-                common_batch_add(batch_tgt, draft[i], n_past + i, { 0 }, true);
-            }
-
-            //LOG_DBG("target batch: %s\n", string_from(ctx_tgt, batch_tgt).c_str());
-
-            llama_decode(ctx_tgt, batch_tgt); //여기가 타겟 모델 forward 시작점인듯
-        }
-
-        // sample from the full target batch and return the accepted tokens based on the target sampler
-        //
-        // for each token to be accepted, the sampler would have to sample that same token
-        // in such cases, instead of decoding the sampled token as we normally do, we simply continue with the
-        // available logits from the batch and sample the next token until we run out of logits or the sampler
-        // disagrees with the draft
-        //
-        const auto ids = common_sampler_sample_and_accept_n(smpl, ctx_tgt, draft);
-
-        //LOG_DBG("ids: %s\n", string_from(ctx_tgt, ids).c_str());
-
-        GGML_ASSERT(ids.size() > 0); // there will always be at least one accepted token
-
-        n_past    += ids.size() - 1;
-        n_drafted += draft.size(); // note: we ignore the discarded small drafts
-        n_accept  += ids.size() - 1;
-        n_predict += ids.size();
-
-        // process the accepted tokens and update contexts
-        //
-        // this is the standard token post-processing that we normally do
-        // in this case, we do it for a group of accepted tokens at once
-        //
-        for (size_t i = 0; i < ids.size(); ++i) {
-            prompt_tgt.push_back(id_last);
-
-            id_last = ids[i];
-
-            if (llama_vocab_is_eog(vocab, id_last)) {
-                has_eos = true;
-                break;
-            }
-
-            const std::string token_str = common_token_to_piece(ctx_tgt, id_last);
-
-            if (params.use_color && i + 1 < ids.size()) {
-                LOG("\u001b[%dm%s\u001b[37m", (36 - 0 % 6), token_str.c_str());
-            } else {
-                LOG("%s", token_str.c_str());
-            }
-        }
-
-        LOG_DBG("accepted %d/%d draft tokens, the last target token is: (%d)\n", (int) ids.size() - 1, (int) draft.size(), id_last);
-
-        {
-            LOG_DBG("clear kv cache from any extra tokens, n_past = %d\n", n_past);
-
-            llama_kv_cache_seq_rm(ctx_tgt, 0, n_past, -1);
-        }
-
-        if ((params.n_predict >= 0 && n_predict > params.n_predict) || has_eos) {
-            break;
-        }
-    }
-
-    auto t_dec_end = ggml_time_us();
-
-    const int n_input = inp.size();
-
-    LOG("\n\n");
-
-    LOG_INF("encoded %4d tokens in %8.3f seconds, speed: %8.3f t/s\n", n_input,   (t_enc_end - t_enc_start) / 1e6f, inp.size() / ((t_enc_end - t_enc_start) / 1e6f));
-    LOG_INF("decoded %4d tokens in %8.3f seconds, speed: %8.3f t/s\n", n_predict, (t_dec_end - t_dec_start) / 1e6f, n_predict  / ((t_dec_end - t_dec_start) / 1e6f));
-
-    LOG_INF("\n");
-    LOG_INF("n_draft   = %d\n", n_draft);
-    LOG_INF("n_predict = %d\n", n_predict);
-    LOG_INF("n_drafted = %d\n", n_drafted);
-    LOG_INF("n_accept  = %d\n", n_accept);
-    LOG_INF("accept    = %.3f%%\n", 100.0f * n_accept / n_drafted);
-
-    LOG_INF("\n");
-    LOG_INF("draft:\n\n");
-
-    llama_perf_context_print(ctx_dft);
-
-    LOG_INF("\n");
-    LOG_INF("target:\n\n");
-    common_perf_print(ctx_tgt, smpl);
-
-    common_sampler_free(smpl);
-    common_speculative_free(spec);
-
-    llama_backend_free();
-
-    LOG("\n\n");
-
-    return 0;
-}*/
-
 #include "arg.h"         // Command-line argument parsing helpers
 #include "common.h"      // Common helper functions for llama.cpp examples
 #include "sampling.h"    // Token sampling strategies (temperature, top-k, top-p, etc.)
@@ -452,7 +158,7 @@ int main(int argc, char ** argv) {
     prompt_tgt.reserve(llama_n_ctx(ctx_tgt)); // 메모리 예비 할당
 
     // 현재까지 처리된 토큰 수 (= KV 캐시 내 위치)
-    int n_past = inp.size() - 1;
+    int n_past = inp.size();
 
     // 11. Speculator 초기화
     // Speculative decoding 파라미터 설정
@@ -465,7 +171,6 @@ int main(int argc, char ** argv) {
     // 이 객체는 draft 토큰 생성 로직을 담당하며, 필요한 내부 상태나 버퍼를 가질 수 있음.
     // 주석: draft model의 context를 사용해서 speculative 구조체를 생성... - 정확함. (spec은 객체 포인터)
     struct common_speculative * spec = common_speculative_init(ctx_dft);
-    struct common_speculative * spec_target = common_speculative_init(ctx_tgt);
 
     // 12. Target 모델용 배치(Batch) 초기화
     // llama_batch_init: Target 모델에 토큰들을 전달하기 위한 재사용 가능한 배치 구조체 생성
@@ -482,16 +187,22 @@ int main(int argc, char ** argv) {
 
     // --- Extract hidden state after first target model run ---
     // 1. Decode the prompt in the target model
-    llama_batch batch_prompt = llama_batch_get_one(inp.data(), inp.size());
-    llama_decode(ctx_tgt, batch_prompt);
+    printf("Target 모델이 Initial Token을 생성합니다.\n\n");
+    common_batch_clear(batch_tgt); // 배치 초기화
+    // Target에서 온 마지막 토큰(id_last)을 Draft 배치에 추가 (이 위치의 로짓이 필요함, true)
+    common_batch_add (batch_tgt, id_last, n_past++, { 0 }, true);
+    llama_decode(ctx_tgt, batch_tgt);
     
     llama_token new_token_id = common_sampler_sample(smpl, ctx_tgt, -1);
     id_last = new_token_id;
     prompt_tgt.push_back(id_last);
+    //n_past++;
+    n_predict++;
 
     // 샘플링된 토큰이 문장 끝(End of Generation) 토큰인지 확인
     if (llama_vocab_is_eog(vocab, id_last)) {
         printf(" [EOS]"); // EOS 토큰이면 표시하고 루프 종료
+        return 0;
     }
     
     // 샘플링된 토큰 ID를 텍스트로 변환하여 출력
@@ -502,22 +213,33 @@ int main(int argc, char ** argv) {
         return 1;
     }
     std::string s(buf, n);
-    printf("%s", s.c_str()); // 출력
+    printf("{%s} First Token by Target Model\n\n", s.c_str()); // 출력
     fflush(stdout); // 버퍼를 비워 즉시 출력되도록 함
 
+    printf("여기부터 배치 처리가 시작됩니다.\n\n");
+    fflush(stdout); // 버퍼를 비워 즉시 출력되도록 함
     //배치 처리하는 부분 수정해야됨!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    batch_tgt = llama_batch_get_one(&new_token_id, 1);
+    // batch_tgt = llama_batch_get_one(&new_token_id, 1);
+    //common_batch_add(batch_tgt, id_last, n_past++, { 0 }, true);
     // common_batch_add(batch_tgt, id_last, n_past++, { 0 }, true);
 
-    // 2. Get the hidden state from the last layer
-    const int n_layers = llama_model_n_layer(model_tgt);
-    const int n_embd = llama_model_n_embd(model_tgt);
-    float * hidden_state = llama_get_embeddings_ith(ctx_tgt, inp.size()-1); // 마지막 토큰의 hidden state 추출
-
-    if (hidden_state == nullptr) {
-        LOG_ERR("%s: Failed to get hidden state from target model\n", __func__);
-        return 1;
+    // 13.7. KV 캐시 정리 (Rollback)
+    // Target 모델의 KV 캐시에서 거절된 draft 토큰들에 해당하는 항목들을 제거/무효화.
+    // 현재 유효한 마지막 위치인 n_past 이후의 캐시 내용을 제거하여 다음 스텝과 일관성 유지.
+    {
+        LOG_DBG("clear kv cache from any extra tokens, n_past = %d\n", n_past);
+        llama_kv_cache_seq_rm(ctx_tgt, 0, n_past, -1); // 시퀀스 0의 n_past 위치 이후 캐시 제거
     }
+
+    // 2. Get the hidden state from the last layer
+    // const int n_layers = llama_model_n_layer(model_tgt);
+    // const int n_embd = llama_model_n_embd(model_tgt);
+    // float * hidden_state = llama_get_embeddings_ith(ctx_tgt, inp.size()-1); // 마지막 토큰의 hidden state 추출
+
+    // if (hidden_state == nullptr) {
+    //     LOG_ERR("%s: Failed to get hidden state from target model\n", __func__);
+    //     return 1;
+    // }
     
     // // 3. Set the hidden state as input embedding for the draft model
     // //    - Create a tensor for the embedding
@@ -533,6 +255,8 @@ int main(int argc, char ** argv) {
     //새로운 함수를 하나 구현해야하나..?
     // llama_tokens initial_draft = target_model_initialize(spec_target, params_spec, prompt_tgt, id_last);
 
+    printf("Draft Generation Phase에 진입합니다.1\n");
+    fflush(stdout); // 버퍼를 비워 즉시 출력되도록 함
     // 13. 메인 생성 루프
     while (true) {
         // 13.1. Draft 토큰 생성
@@ -542,11 +266,19 @@ int main(int argc, char ** argv) {
         // 주석 수정: params_spec는 Target 모델 구조체가 아니라, Speculation 프로세스 파라미터임.
         llama_tokens draft = common_speculative_gen_draft(spec, params_spec, prompt_tgt, id_last);
 
+        //printf("Draft Generation Phase에 진입합니다.2\n");
+        //fflush(stdout); // 버퍼를 비워 즉시 출력되도록 함
+
         // 13.2. Target 모델 입력 배치 준비
         common_batch_clear(batch_tgt); // 이전 배치 내용 초기화
+        //printf("Draft Generation Phase에 진입합니다.3\n");
+        //fflush(stdout); // 버퍼를 비워 즉시 출력되도록 함
         // 마지막으로 수락된 토큰(id_last)을 현재 KV 캐시 위치(n_past)에 추가. n_past는 사용 후 증가됨 (++).
         common_batch_add(batch_tgt, id_last, n_past++, { 0 }, true);
 
+
+        //printf("Draft Generation Phase에 진입합니다.4\n");
+        //fflush(stdout); // 버퍼를 비워 즉시 출력되도록 함
         // 생성된 draft 토큰들을 Target 배치에 추가 (최소 길이 조건 충족 시)
         if (draft.size() >= (size_t) n_draft_min) {
             for (size_t i = 0; i < draft.size(); ++i) {
@@ -557,11 +289,17 @@ int main(int argc, char ** argv) {
             draft.clear(); // 너무 짧은 draft는 무시
         }
 
+        //printf("Draft Generation Phase에 진입합니다.5\n");
+        //fflush(stdout); // 버퍼를 비워 즉시 출력되도록 함
+
         // 13.3. Target 모델 디코딩 (Forward Pass)
         // 준비된 배치(id_last + 유효 draft 토큰들)를 Target 모델(ctx_tgt)에 입력하여
         // 각 토큰 위치에 대한 로짓(logits)을 계산함.
         // 주석: 여기가 타겟 모델 forward 시작점인듯 - 정확함.
         llama_decode(ctx_tgt, batch_tgt);
+
+        //printf("Draft Generation Phase에 진입합니다.\n\n");
+        //fflush(stdout); // 버퍼를 비워 즉시 출력되도록 함
 
         // 13.4. 샘플링 및 Draft 토큰 수락 검증
         // common_sampler_sample_and_accept_n: Target 모델의 로짓과 샘플러(smpl), 그리고 원본 draft 토큰들을 비교.
@@ -601,6 +339,7 @@ int main(int argc, char ** argv) {
             if (params.use_color && i + 1 < ids.size()) { // 수락된 draft 토큰에 색 적용
                 LOG("\u001b[%dm%s\u001b[37m", (36 - 0 % 6), token_str.c_str());
             } else {
+                //LOG("{ %s }", token_str.c_str());
                 LOG("%s", token_str.c_str());
             }
              fflush(stdout); // 즉시 출력되도록 버퍼 비우기
@@ -656,7 +395,6 @@ int main(int argc, char ** argv) {
     // 15. 자원 해제
     common_sampler_free(smpl); // 샘플러 객체 메모리 해제
     common_speculative_free(spec); // Speculator 객체 메모리 해제
-    common_speculative_free(spec_target); // Speculator 객체 메모리 해제
     // 모델 및 컨텍스트는 common_init_result의 소멸자(destructor)가 자동으로 처리 (스마트 포인터 사용 시)
     llama_backend_free(); // llama.cpp 백엔드 자원 해제
 

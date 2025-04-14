@@ -579,9 +579,6 @@ class Model:
         # NOTE: if you get an error here, you need to update the convert_hf_to_gguf_update.py script
         #       or pull the latest version of the model from Huggingface
         #       don't edit the hashes manually!
-        if chkhsh == "0ef9807a4087ebef797fc749390439009c3b9eda9ad1a097abbe738f486c01e5":
-            # ref: https://huggingface.co/meta-llama/Meta-Llama-3-8B
-            res = "llama-bpe"
         if chkhsh == "049ecf7629871e3041641907f3de7c733e4dbfdc736f57d882ba0b0845599754":
             # ref: https://huggingface.co/deepseek-ai/deepseek-llm-7b-base
             res = "deepseek-llm"
@@ -591,12 +588,12 @@ class Model:
         if chkhsh == "8aeee3860c56296a157a1fe2fad249ec40aa59b1bb5709f4ade11c4e6fe652ed":
             # ref: https://huggingface.co/tiiuae/falcon-7b
             res = "falcon"
-        if chkhsh == "9d032fcbd5501f4a38150912590928bfb36091efb5df11b8e2124b0390e3fb1e":
-            # ref: https://huggingface.co/tiiuae/Falcon3-7B-Base
-            res = "falcon3"
         if chkhsh == "0876d13b50744004aa9aeae05e7b0647eac9d801b5ba4668afc01e709c15e19f":
             # ref: https://huggingface.co/BAAI/bge-small-en-v1.5
             res = "bert-bge"
+        if chkhsh == "9d032fcbd5501f4a38150912590928bfb36091efb5df11b8e2124b0390e3fb1e":
+            # ref: https://huggingface.co/tiiuae/Falcon3-7B-Base
+            res = "falcon3"
         if chkhsh == "8e62295832751ca1e8f92f2226f403dea30dc5165e448b5bfa05af5340c64ec7":
             # ref: https://huggingface.co/BAAI/bge-large-zh-v1.5
             res = "bert-bge-large"
@@ -615,18 +612,12 @@ class Model:
         if chkhsh == "6221ad2852e85ce96f791f476e0b390cf9b474c9e3d1362f53a24a06dc8220ff":
             # ref: https://huggingface.co/smallcloudai/Refact-1_6-base
             res = "refact"
-        if chkhsh == "9c2227e4dd922002fb81bde4fc02b0483ca4f12911410dee2255e4987644e3f8":
-            # ref: https://huggingface.co/CohereForAI/c4ai-command-r-v01
-            res = "command-r"
         if chkhsh == "e636dc30a262dcc0d8c323492e32ae2b70728f4df7dfe9737d9f920a282b8aea":
             # ref: https://huggingface.co/Qwen/Qwen1.5-7B
             res = "qwen2"
         if chkhsh == "b6dc8df998e1cfbdc4eac8243701a65afe638679230920b50d6f17d81c098166":
             # ref: https://huggingface.co/allenai/OLMo-1.7-7B-hf
             res = "olmo"
-        if chkhsh == "a8594e3edff7c29c003940395316294b2c623e09894deebbc65f33f1515df79e":
-            # ref: https://huggingface.co/databricks/dbrx-base
-            res = "dbrx"
         if chkhsh == "c7699093ba4255a91e702aa38a596aa81669f3525dae06c2953267dde580f448":
             # ref: https://huggingface.co/jinaai/jina-reranker-v1-tiny-en
             res = "jina-v1-en"
@@ -648,21 +639,12 @@ class Model:
         if chkhsh == "7967bfa498ade6b757b064f31e964dddbb80f8f9a4d68d4ba7998fcf281c531a":
             # ref: https://huggingface.co/jinaai/jina-embeddings-v2-base-code
             res = "jina-v2-code"
-        if chkhsh == "b6e8e1518dc4305be2fe39c313ed643381c4da5db34a98f6a04c093f8afbe99b" or chkhsh == "81d72c7348a9f0ebe86f23298d37debe0a5e71149e29bd283904c02262b27516":
-            # ref: https://huggingface.co/THUDM/glm-4-9b-chat
-            res = "chatglm-bpe"
         if chkhsh == "7fc505bd3104ca1083b150b17d088b59534ede9bde81f0dd2090967d7fe52cee":
             # ref: https://huggingface.co/LumiOpen/Viking-7B
             res = "viking"
-        if chkhsh == "b53802fb28e26d645c3a310b34bfe07da813026ec7c7716883404d5e0f8b1901":
-            # ref: https://huggingface.co/core42/jais-13b
-            res = "jais"
         if chkhsh == "7b3e7548e4308f52a76e8229e4e6cc831195d0d1df43aed21ac6c93da05fec5f":
             # ref: https://huggingface.co/WisdomShell/CodeShell-7B
             res = "codeshell"
-        if chkhsh == "63b97e4253352e6f357cc59ea5b583e3a680eaeaf2632188c2b952de2588485e":
-            # ref: https://huggingface.co/mistralai/Mistral-Nemo-Base-2407
-            res = "tekken"
         if chkhsh == "855059429035d75a914d1eda9f10a876752e281a054a7a3d421ef0533e5b6249":
             # ref: https://huggingface.co/HuggingFaceTB/SmolLM-135M
             res = "smollm"
@@ -672,16 +654,10 @@ class Model:
         if chkhsh == "bc01ce58980e1db43859146dc51b1758b3b88729b217a74792e9f8d43e479d21":
             # ref: https://huggingface.co/TurkuNLP/gpt3-finnish-small
             res = "gpt3-finnish"
-        if chkhsh == "4e2b24cc4770243d65a2c9ec19770a72f08cffc161adbb73fcbb6b7dd45a0aae":
-            # ref: https://huggingface.co/LGAI-EXAONE/EXAONE-3.0-7.8B-Instruct
-            res = "exaone"
         if chkhsh == "fcace8b9cac38ce847670c970cd5892031a753a1ef381abd1d9af00f713da085":
             # ref: https://huggingface.co/microsoft/phi-2
             res = "phi-2"
-        if chkhsh == "60824e3c0d9401f89943cbb2fff727f0e2d4c545ba4df2d6e4f09a6db0f5b450":
-            # ref: https://huggingface.co/facebook/chameleon-7b
-            res = "chameleon"
-        if chkhsh == "1431a23e583c97432bc230bff598d103ddb5a1f89960c8f1d1051aaa944d0b35":
+        if chkhsh == "68fa7e0a33050885cc10a2acfa4df354042188f0afa03b809f7a71c4cde6e373":
             # ref: https://huggingface.co/sapienzanlp/Minerva-7B-base-v1.0
             res = "minerva-7b"
         if chkhsh == "8b5a93ed704057481f240da0be7e7dca721d7f8f4755263b6807227a2cbeae65":
@@ -1560,10 +1536,12 @@ class StableLMModel(Model):
                 raise ValueError(f"Unprocessed norms: {norms}")
 
 
-@Model.register("LLaMAForCausalLM", "LlamaForCausalLM_EAGLE", "MistralForCausalLM", "MixtralForCausalLM")
+# @Model.register("LLaMAForCausalLM", "LlamaForCausalLM_EAGLE", "MistralForCausalLM", "MixtralForCausalLM")
+@Model.register("LLaMAForCausalLM", "MistralForCausalLM", "MixtralForCausalLM", "LlamaForCausalLM")
 class LlamaModel(Model):
-    #model_arch = gguf.MODEL_ARCH.LLAMA
-    model_arch = gguf.MODEL_ARCH.EAGLE
+    model_arch = gguf.MODEL_ARCH.LLAMA
+    #model_arch = gguf.MODEL_ARCH.EAGLE
+    #model_arch = gguf.MODEL_ARCH.VICUNA
 
     def set_vocab(self):
         try:
@@ -1707,151 +1685,151 @@ class LlamaModel(Model):
             if len(experts) > 0:
                 raise ValueError(f"Unprocessed experts: {experts}")
             
-@Model.register("LLaMAForCausalLM_EAGLE")
-class LlamaModel_EAGLE(Model):
-    model_arch = gguf.MODEL_ARCH.EAGLE
+# @Model.register("LLaMAForCausalLM_EAGLE")
+# class LlamaModel_EAGLE(Model):
+#     model_arch = gguf.MODEL_ARCH.EAGLE
 
-    def set_vocab(self):
-        try:
-            self._set_vocab_sentencepiece()
-        except FileNotFoundError:
-            try:
-                self._set_vocab_llama_hf()
-            except (FileNotFoundError, TypeError):
-                # Llama 3
-                self._set_vocab_gpt2()
+#     def set_vocab(self):
+#         try:
+#             self._set_vocab_sentencepiece()
+#         except FileNotFoundError:
+#             try:
+#                 self._set_vocab_llama_hf()
+#             except (FileNotFoundError, TypeError):
+#                 # Llama 3
+#                 self._set_vocab_gpt2()
 
-        # Apply to CodeLlama only (and ignore for Llama 3 with a vocab size of 128256)
-        if self.hparams.get("vocab_size", 32000) == 32016:
-            special_vocab = gguf.SpecialVocab(
-                self.dir_model, load_merges=False,
-                special_token_types = ['prefix', 'suffix', 'middle', 'eot']
-            )
-            special_vocab._set_special_token("prefix", 32007)
-            special_vocab._set_special_token("suffix", 32008)
-            special_vocab._set_special_token("middle", 32009)
-            special_vocab._set_special_token("eot",    32010)
-            special_vocab.add_to_gguf(self.gguf_writer)
+#         # Apply to CodeLlama only (and ignore for Llama 3 with a vocab size of 128256)
+#         if self.hparams.get("vocab_size", 32000) == 32016:
+#             special_vocab = gguf.SpecialVocab(
+#                 self.dir_model, load_merges=False,
+#                 special_token_types = ['prefix', 'suffix', 'middle', 'eot']
+#             )
+#             special_vocab._set_special_token("prefix", 32007)
+#             special_vocab._set_special_token("suffix", 32008)
+#             special_vocab._set_special_token("middle", 32009)
+#             special_vocab._set_special_token("eot",    32010)
+#             special_vocab.add_to_gguf(self.gguf_writer)
 
-        tokenizer_config_file = self.dir_model / 'tokenizer_config.json'
-        if tokenizer_config_file.is_file():
-            with open(tokenizer_config_file, "r", encoding="utf-8") as f:
-                tokenizer_config_json = json.load(f)
-                if "add_prefix_space" in tokenizer_config_json:
-                    self.gguf_writer.add_add_space_prefix(tokenizer_config_json["add_prefix_space"])
+#         tokenizer_config_file = self.dir_model / 'tokenizer_config.json'
+#         if tokenizer_config_file.is_file():
+#             with open(tokenizer_config_file, "r", encoding="utf-8") as f:
+#                 tokenizer_config_json = json.load(f)
+#                 if "add_prefix_space" in tokenizer_config_json:
+#                     self.gguf_writer.add_add_space_prefix(tokenizer_config_json["add_prefix_space"])
 
-        # Apply to granite small models only
-        if self.hparams.get("vocab_size", 32000) == 49152:
-            self.gguf_writer.add_add_bos_token(False)
+#         # Apply to granite small models only
+#         if self.hparams.get("vocab_size", 32000) == 49152:
+#             self.gguf_writer.add_add_bos_token(False)
 
-    def set_gguf_parameters(self):
-        super().set_gguf_parameters()
-        hparams = self.hparams
-        self.gguf_writer.add_vocab_size(hparams["vocab_size"])
+#     def set_gguf_parameters(self):
+#         super().set_gguf_parameters()
+#         hparams = self.hparams
+#         self.gguf_writer.add_vocab_size(hparams["vocab_size"])
 
-        if "head_dim" in hparams:
-            rope_dim = hparams["head_dim"]
-        else:
-            rope_dim = hparams["hidden_size"] // hparams["num_attention_heads"]
-        self.gguf_writer.add_rope_dimension_count(rope_dim)
+#         if "head_dim" in hparams:
+#             rope_dim = hparams["head_dim"]
+#         else:
+#             rope_dim = hparams["hidden_size"] // hparams["num_attention_heads"]
+#         self.gguf_writer.add_rope_dimension_count(rope_dim)
 
-        if self.hparams.get("rope_scaling") is not None and "factor" in self.hparams["rope_scaling"]:
-            if self.hparams["rope_scaling"].get("type") == "linear":
-                self.gguf_writer.add_rope_scaling_type(gguf.RopeScalingType.LINEAR)
-                self.gguf_writer.add_rope_scaling_factor(self.hparams["rope_scaling"]["factor"])
+#         if self.hparams.get("rope_scaling") is not None and "factor" in self.hparams["rope_scaling"]:
+#             if self.hparams["rope_scaling"].get("type") == "linear":
+#                 self.gguf_writer.add_rope_scaling_type(gguf.RopeScalingType.LINEAR)
+#                 self.gguf_writer.add_rope_scaling_factor(self.hparams["rope_scaling"]["factor"])
 
-    @staticmethod
-    def permute(weights: Tensor, n_head: int, n_head_kv: int | None):
-        if n_head_kv is not None and n_head != n_head_kv:
-            n_head = n_head_kv
-        return (weights.reshape(n_head, 2, weights.shape[0] // n_head // 2, *weights.shape[1:])
-                .swapaxes(1, 2)
-                .reshape(weights.shape))
+#     @staticmethod
+#     def permute(weights: Tensor, n_head: int, n_head_kv: int | None):
+#         if n_head_kv is not None and n_head != n_head_kv:
+#             n_head = n_head_kv
+#         return (weights.reshape(n_head, 2, weights.shape[0] // n_head // 2, *weights.shape[1:])
+#                 .swapaxes(1, 2)
+#                 .reshape(weights.shape))
 
-    _experts: list[dict[str, Tensor]] | None = None
+#     _experts: list[dict[str, Tensor]] | None = None
 
-    def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
-        n_head = self.hparams["num_attention_heads"]
-        n_kv_head = self.hparams.get("num_key_value_heads")
+#     def modify_tensors(self, data_torch: Tensor, name: str, bid: int | None) -> Iterable[tuple[str, Tensor]]:
+#         n_head = self.hparams["num_attention_heads"]
+#         n_kv_head = self.hparams.get("num_key_value_heads")
 
-        if name.endswith(("q_proj.weight", "q_proj.bias")):
-            data_torch = LlamaModel.permute(data_torch, n_head, n_head)
-        if name.endswith(("k_proj.weight", "k_proj.bias")):
-            data_torch = LlamaModel.permute(data_torch, n_head, n_kv_head)
+#         if name.endswith(("q_proj.weight", "q_proj.bias")):
+#             data_torch = LlamaModel.permute(data_torch, n_head, n_head)
+#         if name.endswith(("k_proj.weight", "k_proj.bias")):
+#             data_torch = LlamaModel.permute(data_torch, n_head, n_kv_head)
 
-        # process the experts separately
-        if name.find("block_sparse_moe.experts") != -1:
-            n_experts = self.hparams["num_local_experts"]
+#         # process the experts separately
+#         if name.find("block_sparse_moe.experts") != -1:
+#             n_experts = self.hparams["num_local_experts"]
 
-            assert bid is not None
+#             assert bid is not None
 
-            if self._experts is None:
-                self._experts = [{} for _ in range(self.block_count)]
+#             if self._experts is None:
+#                 self._experts = [{} for _ in range(self.block_count)]
 
-            self._experts[bid][name] = data_torch
+#             self._experts[bid][name] = data_torch
 
-            if len(self._experts[bid]) >= n_experts * 3:
-                tensors: list[tuple[str, Tensor]] = []
+#             if len(self._experts[bid]) >= n_experts * 3:
+#                 tensors: list[tuple[str, Tensor]] = []
 
-                # merge the experts into a single 3d tensor
-                for wid in ["w1", "w2", "w3"]:
-                    datas: list[Tensor] = []
+#                 # merge the experts into a single 3d tensor
+#                 for wid in ["w1", "w2", "w3"]:
+#                     datas: list[Tensor] = []
 
-                    for xid in range(n_experts):
-                        ename = f"model.layers.{bid}.block_sparse_moe.experts.{xid}.{wid}.weight"
-                        datas.append(self._experts[bid][ename])
-                        del self._experts[bid][ename]
+#                     for xid in range(n_experts):
+#                         ename = f"model.layers.{bid}.block_sparse_moe.experts.{xid}.{wid}.weight"
+#                         datas.append(self._experts[bid][ename])
+#                         del self._experts[bid][ename]
 
-                    data_torch = torch.stack(datas, dim=0)
+#                     data_torch = torch.stack(datas, dim=0)
 
-                    merged_name = f"layers.{bid}.feed_forward.experts.{wid}.weight"
+#                     merged_name = f"layers.{bid}.feed_forward.experts.{wid}.weight"
 
-                    new_name = self.map_tensor_name(merged_name)
+#                     new_name = self.map_tensor_name(merged_name)
 
-                    tensors.append((new_name, data_torch))
-                return tensors
-            else:
-                return []
+#                     tensors.append((new_name, data_torch))
+#                 return tensors
+#             else:
+#                 return []
 
-        return [(self.map_tensor_name(name), data_torch)]
+#         return [(self.map_tensor_name(name), data_torch)]
 
-    def generate_extra_tensors(self) -> Iterable[tuple[str, Tensor]]:
-        if rope_scaling := self.find_hparam(["rope_scaling"], optional=True):
-            if rope_scaling.get("rope_type", '').lower() == "llama3":
-                base = self.hparams.get("rope_theta", 10000.0)
-                dim = self.hparams.get("head_dim", self.hparams["hidden_size"] // self.hparams["num_attention_heads"])
-                freqs = 1.0 / (base ** (torch.arange(0, dim, 2, dtype=torch.float32) / dim))
+#     def generate_extra_tensors(self) -> Iterable[tuple[str, Tensor]]:
+#         if rope_scaling := self.find_hparam(["rope_scaling"], optional=True):
+#             if rope_scaling.get("rope_type", '').lower() == "llama3":
+#                 base = self.hparams.get("rope_theta", 10000.0)
+#                 dim = self.hparams.get("head_dim", self.hparams["hidden_size"] // self.hparams["num_attention_heads"])
+#                 freqs = 1.0 / (base ** (torch.arange(0, dim, 2, dtype=torch.float32) / dim))
 
-                factor = rope_scaling.get("factor", 8.0)
-                low_freq_factor = rope_scaling.get("low_freq_factor", 1.0)
-                high_freq_factor = rope_scaling.get("high_freq_factor", 4.0)
-                old_context_len = self.hparams.get("original_max_position_embeddings", 8192)
+#                 factor = rope_scaling.get("factor", 8.0)
+#                 low_freq_factor = rope_scaling.get("low_freq_factor", 1.0)
+#                 high_freq_factor = rope_scaling.get("high_freq_factor", 4.0)
+#                 old_context_len = self.hparams.get("original_max_position_embeddings", 8192)
 
-                low_freq_wavelen = old_context_len / low_freq_factor
-                high_freq_wavelen = old_context_len / high_freq_factor
-                assert low_freq_wavelen != high_freq_wavelen
+#                 low_freq_wavelen = old_context_len / low_freq_factor
+#                 high_freq_wavelen = old_context_len / high_freq_factor
+#                 assert low_freq_wavelen != high_freq_wavelen
 
-                rope_factors = []
-                for freq in freqs:
-                    wavelen = 2 * math.pi / freq
-                    if wavelen < high_freq_wavelen:
-                        rope_factors.append(1)
-                    elif wavelen > low_freq_wavelen:
-                        rope_factors.append(factor)
-                    else:
-                        smooth = (old_context_len / wavelen - low_freq_factor) / (high_freq_factor - low_freq_factor)
-                        rope_factors.append(1 / ((1 - smooth) / factor + smooth))
+#                 rope_factors = []
+#                 for freq in freqs:
+#                     wavelen = 2 * math.pi / freq
+#                     if wavelen < high_freq_wavelen:
+#                         rope_factors.append(1)
+#                     elif wavelen > low_freq_wavelen:
+#                         rope_factors.append(factor)
+#                     else:
+#                         smooth = (old_context_len / wavelen - low_freq_factor) / (high_freq_factor - low_freq_factor)
+#                         rope_factors.append(1 / ((1 - smooth) / factor + smooth))
 
-                yield (self.format_tensor_name(gguf.MODEL_TENSOR.ROPE_FREQS), torch.tensor(rope_factors, dtype=torch.float32))
+#                 yield (self.format_tensor_name(gguf.MODEL_TENSOR.ROPE_FREQS), torch.tensor(rope_factors, dtype=torch.float32))
 
-    def prepare_tensors(self):
-        super().prepare_tensors()
+#     def prepare_tensors(self):
+#         super().prepare_tensors()
 
-        if self._experts is not None:
-            # flatten `list[dict[str, Tensor]]` into `list[str]`
-            experts = [k for d in self._experts for k in d.keys()]
-            if len(experts) > 0:
-                raise ValueError(f"Unprocessed experts: {experts}")
+#         if self._experts is not None:
+#             # flatten `list[dict[str, Tensor]]` into `list[str]`
+#             experts = [k for d in self._experts for k in d.keys()]
+#             if len(experts) > 0:
+#                 raise ValueError(f"Unprocessed experts: {experts}")
 
 @Model.register("DeciLMForCausalLM")
 class DeciModel(Model):
