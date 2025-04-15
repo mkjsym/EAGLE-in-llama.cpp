@@ -70,6 +70,7 @@ static bool qwen2vl_eval_image_embed(llama_context * ctx_llama, const struct lla
             int32_t(n_eval),                // n_tokens
             nullptr,                        // token
             (image_embed->embed+i*n_embd),  // embed
+            nullptr,
             batch_mrope_pos.data(),         // pos
             nullptr,  // n_seq_id
             nullptr,  // seq_id

@@ -67,6 +67,7 @@ struct llama_context {
     // populated only when pooling_type == LLAMA_POOLING_TYPE_NONE
     size_t  embd_size = 0; // capacity (of floats) for embeddings
     float * embd      = nullptr;
+    float * hidden    = nullptr; //eagle
 
     // sequence embeddings output (map of [n_embd] vectors)
     // populated only when pooling_type != LLAMA_POOLING_TYPE_NONE
@@ -94,6 +95,7 @@ struct llama_context {
     // input tensors
     struct ggml_tensor * inp_tokens;        // I32 [n_batch]
     struct ggml_tensor * inp_embd;          // F32 [n_embd, n_batch]
+    struct ggml_tensor * inp_hidd; //eagle input hidden state
     struct ggml_tensor * inp_pos;           // I32 [n_batch]
     struct ggml_tensor * inp_out_ids;       // I32 [n_outputs]
     struct ggml_tensor * inp_KQ_mask;       // F32 [kv_size, n_batch]

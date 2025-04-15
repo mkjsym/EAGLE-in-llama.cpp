@@ -191,7 +191,7 @@ int main(int argc, char ** argv) {
     common_batch_clear(batch_tgt); // 배치 초기화
     // Target에서 온 마지막 토큰(id_last)을 Draft 배치에 추가 (이 위치의 로짓이 필요함, true)
     common_batch_add (batch_tgt, id_last, n_past++, { 0 }, true);
-    llama_decode(ctx_tgt, batch_tgt);
+    llama_decode_initial(ctx_tgt, batch_tgt, ctx_dft);
     
     llama_token new_token_id = common_sampler_sample(smpl, ctx_tgt, -1);
     id_last = new_token_id;

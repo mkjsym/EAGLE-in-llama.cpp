@@ -17,6 +17,7 @@ struct llama_ubatch {
 
     llama_token  *  token;    // [n_tokens]
     float        *  embd;     // [n_embd, n_tokens]
+    float        *  hidd; //eagle
     llama_pos    *  pos;      // [n_tokens]
     int32_t      *  n_seq_id; // [n_seqs]
     llama_seq_id ** seq_id;   // [n_seqs]
@@ -52,6 +53,7 @@ struct llama_sbatch {
     // buffers for the ubatch
     std::vector<llama_token>    ubatch_token;
     std::vector<float>          ubatch_embd;
+    std::vector<float>          ubatch_hidd;
     std::vector<llama_pos>      ubatch_pos;
     std::vector<int32_t>        ubatch_n_seq_id;
     std::vector<llama_seq_id *> ubatch_seq_id;

@@ -80,6 +80,13 @@ void llama_set_inputs(llama_context & lctx, const llama_ubatch & ubatch) {
         ggml_backend_tensor_set(lctx.inp_embd, ubatch.embd, 0, n_tokens*n_embd*ggml_element_size(lctx.inp_embd));
     }
 
+    if (lctx.inp_hidd) {
+        const int64_t n_embd   = hparams.n_embd;
+        const int64_t n_tokens = ubatch.n_tokens;
+
+        ggml_backend_tensor_set(lctx.inp_hidd, lctx.inp_hidd, 0, n_tokens*n_embd*ggml_element_size(lctx.inp_hidd));
+    }
+
     if (ubatch.pos && lctx.inp_pos) {
         const int64_t n_tokens = ubatch.n_tokens;
         auto n_pos = lctx.n_pos_per_token;
@@ -479,7 +486,8 @@ size_t llama_output_reserve(struct llama_context & lctx, size_t n_outputs) {
     const auto n_embd  = hparams.n_embd;
 
     // TODO: use a per-batch flag for logits presence instead
-    const bool has_logits = !cparams.embeddings;
+    //const bool has_logits = !cparams.embeddings;
+    const bool has_logits =  cparams.embeddings;
     const bool has_embd   =  cparams.embeddings && (cparams.pooling_type == LLAMA_POOLING_TYPE_NONE);
 
     const size_t logits_size = has_logits ? n_vocab*n_outputs_max : 0;

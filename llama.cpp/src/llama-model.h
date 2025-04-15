@@ -297,6 +297,7 @@ struct llama_model {
     llama_vocab   vocab;
 
     struct ggml_tensor * tok_embd   = nullptr;
+    struct ggml_tensor * inp_hidd   = nullptr; //eagle
     struct ggml_tensor * type_embd  = nullptr;
     struct ggml_tensor * pos_embd   = nullptr;
     struct ggml_tensor * tok_norm   = nullptr;

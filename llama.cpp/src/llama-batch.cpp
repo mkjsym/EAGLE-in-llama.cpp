@@ -16,6 +16,7 @@ llama_ubatch llama_sbatch::reserve_ubatch(size_t n_ubatch, bool has_embd) {
     }
     ubatch_token.resize(!has_embd ? n_ubatch : 0);
     ubatch_embd.resize(has_embd ? n_embd * n_ubatch : 0);
+    ubatch_hidd.resize(has_embd ? n_embd * n_ubatch : 0);
     ubatch_pos.resize(n_ubatch);
     ubatch_n_seq_id.resize(n_ubatch);
     ubatch_seq_id.resize(n_ubatch);
@@ -27,6 +28,7 @@ llama_ubatch llama_sbatch::reserve_ubatch(size_t n_ubatch, bool has_embd) {
         /*n_seqs       =*/ 0,
         /*token        =*/ !has_embd ? ubatch_token.data() : nullptr,
         /*embd         =*/ has_embd  ? ubatch_embd.data()  : nullptr,
+                           has_embd  ? ubatch_embd.data()  : nullptr,
         /*pos          =*/ ubatch_pos.data(),
         /*n_seq_id     =*/ ubatch_n_seq_id.data(),
         /*seq_id       =*/ ubatch_seq_id.data(),
@@ -70,6 +72,22 @@ void llama_sbatch::add_seq_to_ubatch(llama_ubatch & ubatch, llama_sbatch_seq & s
         }
     } else {
         ubatch.embd = nullptr;
+    }
+    if (batch->hidd) {
+        if (ubatch.equal_seqs) {
+            for (size_t i = 0; i < length; ++i) {
+                memcpy(
+                        ubatch.hidd + (n_embd * (ubatch.n_tokens + i)),
+                        batch->hidd + (n_embd * ids[seq.offset + i]),
+                        n_embd * sizeof(float)
+                      );
+            }
+        } else {
+            // simple split
+            ubatch.hidd = batch->hidd + (n_embd * seq.offset);
+        }
+    } else {
+        ubatch.hidd = nullptr;
     }
     if (ubatch.equal_seqs) {
         for (size_t i = 0; i < length; ++i) {

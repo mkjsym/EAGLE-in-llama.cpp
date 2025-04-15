@@ -249,6 +249,7 @@ extern "C" {
 
         llama_token  *  token;
         float        *  embd;
+        float        *  hidd;
         llama_pos    *  pos;
         int32_t      *  n_seq_id;
         llama_seq_id ** seq_id;
@@ -864,6 +865,15 @@ extern "C" {
     LLAMA_API int32_t llama_decode(
             struct llama_context * ctx,
               struct llama_batch   batch);
+
+    LLAMA_API int32_t llama_decode_initial(
+            struct llama_context * ctx,
+            struct llama_batch   batch,
+            struct llama_context * ctx_dft);
+
+    LLAMA_API int32_t llama_decode_draft(
+            struct llama_context * ctx,
+            struct llama_batch   batch);
 
     LLAMA_API int32_t llama_decode_init(
             struct llama_context * ctx,

@@ -667,6 +667,7 @@ static bool decode_helper(llama_context * ctx, llama_batch & batch, std::vector<
             n_tokens,
             batch.token    + i,
             nullptr,
+            nullptr,
             batch.pos      + i,
             batch.n_seq_id + i,
             batch.seq_id   + i,

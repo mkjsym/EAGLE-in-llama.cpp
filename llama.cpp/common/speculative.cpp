@@ -219,6 +219,7 @@ common_batch_clear(batch); // Draft 배치 초기화
 // Target 히스토리(prompt_tgt)에서 재사용된 부분(i_start + reuse_n) 이후의 토큰들을 처리
 for (size_t i = i_start + reuse_n; i < prompt_tgt.size(); ++i) {
     // 이 토큰들을 Draft 배치에 추가 (위치는 상대적 인덱스 사용)
+    //printf("draft 배치에 추가\n");
     common_batch_add(batch, prompt_tgt[i], i - i_start, { 0 }, false); // 로짓 필요 없음 (false)
     // Draft 내부 히스토리에도 추가
     prompt.push_back(prompt_tgt[i]);
@@ -226,6 +227,7 @@ for (size_t i = i_start + reuse_n; i < prompt_tgt.size(); ++i) {
 
 // 만약 처리할 새로운 토큰들이 있었다면 (일반적으로 드문 경우)
 if (batch.n_tokens > 0) {
+    //printf("여기서 터진다 백퍼\n");
     // Draft 모델(ctx)을 실행하여 이 토큰들에 대한 KV 캐시 업데이트
     llama_decode(ctx, batch);
 }
@@ -239,10 +241,10 @@ common_batch_clear(batch); // 배치 초기화
 common_batch_add (batch, id_last, n_past, { 0 }, true);
 // Draft 내부 히스토리에도 추가
 prompt.push_back(id_last);
-
+//printf("여긴 진입하냐..\n");
 // Draft 모델(ctx)을 실행하여 id_last를 처리하고 다음 토큰 예측을 위한 로짓(logits) 계산
-llama_decode(ctx, batch);
-
+llama_decode_draft(ctx, batch);
+//printf("여긴 진입하냐..2\n");
 // 6. Draft 토큰 생성 (샘플링 루프)
 common_sampler_reset(smpl); // Draft 샘플러 상태 초기화
 
@@ -285,7 +287,7 @@ for (int i = 0; i < params.n_draft; ++i) {
     common_batch_add(batch, id, n_past + i + 1, { 0 }, true); // 로짓 필요 (true)
 
     // Draft 모델을 다시 실행하여 방금 추가된 토큰을 처리하고 다음 위치의 로짓 계산
-    llama_decode(ctx, batch);
+    llama_decode_draft(ctx, batch);
 
     // Draft 내부 히스토리에도 생성된 토큰 추가
     prompt.push_back(id);
