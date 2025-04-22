@@ -525,6 +525,7 @@ struct common_init_result {
 };
 
 struct common_init_result     common_init_from_params(common_params & params);
+struct common_init_result     common_init_from_params_eagle(common_params & params, struct llama_context * ctx_tgt);
 
 struct llama_model_params     common_model_params_to_llama  (      common_params & params);
 struct llama_context_params   common_context_params_to_llama(const common_params & params);

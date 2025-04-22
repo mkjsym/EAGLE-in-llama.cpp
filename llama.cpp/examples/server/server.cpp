@@ -3254,7 +3254,7 @@ struct server_context {
                 params_spec.n_reuse   = llama_n_ctx(slot.ctx_dft) - slot.params.speculative.n_max;
                 params_spec.p_min     = slot.params.speculative.p_min;
 
-                llama_tokens draft = common_speculative_gen_draft(slot.spec, params_spec, slot.cache_tokens, id);
+                llama_tokens draft = common_speculative_gen_draft(slot.spec, params_spec, slot.cache_tokens, id, ctx);
 
                 // ignore small drafts
                 if (slot.params.speculative.n_min > (int) draft.size()) {

@@ -3,7 +3,7 @@
 #include <cstring>
 #include <algorithm>
 
-llama_ubatch llama_sbatch::reserve_ubatch(size_t n_ubatch, bool has_embd) {
+llama_ubatch llama_sbatch::reserve_ubatch(size_t n_ubatch, bool has_embd, bool has_hidd) {
     // clear empty sequences
     // the previous ubatch is assumed to be gone,
     // so nothing should refer to values in these sequences anymore.
@@ -28,7 +28,7 @@ llama_ubatch llama_sbatch::reserve_ubatch(size_t n_ubatch, bool has_embd) {
         /*n_seqs       =*/ 0,
         /*token        =*/ !has_embd ? ubatch_token.data() : nullptr,
         /*embd         =*/ has_embd  ? ubatch_embd.data()  : nullptr,
-                           has_embd  ? ubatch_embd.data()  : nullptr,
+                           has_hidd  ? ubatch_hidd.data()  : nullptr,
         /*pos          =*/ ubatch_pos.data(),
         /*n_seq_id     =*/ ubatch_n_seq_id.data(),
         /*seq_id       =*/ ubatch_seq_id.data(),
@@ -346,6 +346,7 @@ struct llama_batch llama_batch_init(int32_t n_tokens_alloc, int32_t embd, int32_
         /*n_tokens       =*/ 0,
         /*tokens         =*/ nullptr,
         /*embd           =*/ nullptr,
+                             nullptr, //hidd
         /*pos            =*/ nullptr,
         /*n_seq_id       =*/ nullptr,
         /*seq_id         =*/ nullptr,
@@ -354,6 +355,7 @@ struct llama_batch llama_batch_init(int32_t n_tokens_alloc, int32_t embd, int32_
 
     if (embd) {
         batch.embd = (float *) malloc(sizeof(float) * n_tokens_alloc * embd);
+        batch.hidd = (float *) malloc(sizeof(float) * n_tokens_alloc * embd);
     } else {
         batch.token = (llama_token *) malloc(sizeof(llama_token) * n_tokens_alloc);
     }
@@ -374,6 +376,7 @@ struct llama_batch llama_batch_init(int32_t n_tokens_alloc, int32_t embd, int32_
 void llama_batch_free(struct llama_batch batch) {
     if (batch.token)    free(batch.token);
     if (batch.embd)     free(batch.embd);
+    if (batch.hidd)     free(batch.hidd);
     if (batch.pos)      free(batch.pos);
     if (batch.n_seq_id) free(batch.n_seq_id);
     if (batch.seq_id) {

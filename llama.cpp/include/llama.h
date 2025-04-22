@@ -873,7 +873,13 @@ extern "C" {
 
     LLAMA_API int32_t llama_decode_draft(
             struct llama_context * ctx,
-            struct llama_batch   batch);
+            struct llama_batch   batch,
+            struct llama_context * ctx_dft);
+
+    LLAMA_API int32_t llama_decode_eagle(
+        struct llama_context * ctx,
+        struct llama_batch   batch,
+        struct llama_context * ctx_tgt);
 
     LLAMA_API int32_t llama_decode_init(
             struct llama_context * ctx,

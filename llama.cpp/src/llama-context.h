@@ -117,6 +117,7 @@ void llama_set_k_shift(struct llama_context & lctx);
 void llama_set_s_copy(struct llama_context & lctx);
 
 void llama_set_inputs(llama_context & lctx, const llama_ubatch & ubatch);
+void llama_set_inputs_initial(llama_context & lctx, const llama_ubatch & ubatch);
 
 // Make sure enough space is available for outputs.
 // Returns max number of outputs for which space was reserved.

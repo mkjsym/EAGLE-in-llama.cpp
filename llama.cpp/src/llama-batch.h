@@ -59,7 +59,7 @@ struct llama_sbatch {
     std::vector<llama_seq_id *> ubatch_seq_id;
     std::vector<int8_t>         ubatch_output;
 
-    llama_ubatch reserve_ubatch(size_t n_ubatch, bool has_embd = false);
+    llama_ubatch reserve_ubatch(size_t n_ubatch, bool has_embd = false, bool has_hidd = false);
 
     void add_seq_to_ubatch(llama_ubatch & ubatch, llama_sbatch_seq & seq, size_t length);
 

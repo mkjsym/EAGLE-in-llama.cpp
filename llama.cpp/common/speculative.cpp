@@ -138,7 +138,8 @@ llama_tokens common_speculative_gen_draft(
     struct common_speculative * spec, // Draft 모델의 상태 및 헬퍼 객체 포인터 (주석 정확)
     struct common_speculative_params params, // Speculative decoding 파라미터 (주석 수정 필요: Target 모델 구조체가 아님)
     const llama_tokens & prompt_tgt, // Target 모델이 처리한 토큰 히스토리 (주석 수정 필요: 단순 입력 프롬프트 아님)
-    llama_token id_last) { // Target 모델이 마지막으로 '수락(accept)'한 토큰 ID
+    llama_token id_last,
+    struct llama_context * ctx_tgt) { // Target 모델이 마지막으로 '수락(accept)'한 토큰 ID
 
 // 1. Speculator 객체(spec) 내부 멤버들에 대한 참조(reference) 설정
 auto & batch  = spec->batch; // Draft 모델용 배치(batch) 객체
@@ -229,7 +230,7 @@ for (size_t i = i_start + reuse_n; i < prompt_tgt.size(); ++i) {
 if (batch.n_tokens > 0) {
     //printf("여기서 터진다 백퍼\n");
     // Draft 모델(ctx)을 실행하여 이 토큰들에 대한 KV 캐시 업데이트
-    llama_decode(ctx, batch);
+    llama_decode_eagle(ctx, batch, ctx_tgt);
 }
 
 // 5. 마지막 수락 토큰(id_last) 처리
@@ -243,7 +244,7 @@ common_batch_add (batch, id_last, n_past, { 0 }, true);
 prompt.push_back(id_last);
 //printf("여긴 진입하냐..\n");
 // Draft 모델(ctx)을 실행하여 id_last를 처리하고 다음 토큰 예측을 위한 로짓(logits) 계산
-llama_decode_draft(ctx, batch);
+llama_decode_draft(ctx, batch, ctx_tgt);
 //printf("여긴 진입하냐..2\n");
 // 6. Draft 토큰 생성 (샘플링 루프)
 common_sampler_reset(smpl); // Draft 샘플러 상태 초기화
@@ -287,7 +288,7 @@ for (int i = 0; i < params.n_draft; ++i) {
     common_batch_add(batch, id, n_past + i + 1, { 0 }, true); // 로짓 필요 (true)
 
     // Draft 모델을 다시 실행하여 방금 추가된 토큰을 처리하고 다음 위치의 로짓 계산
-    llama_decode_draft(ctx, batch);
+    llama_decode_draft(ctx, batch, ctx_tgt);
 
     // Draft 내부 히스토리에도 생성된 토큰 추가
     prompt.push_back(id);

@@ -1067,6 +1067,177 @@ struct common_init_result common_init_from_params(common_params & params) {
     return iparams;
 }
 
+struct common_init_result common_init_from_params_eagle(common_params & params, struct llama_context * ctx_tgt) {
+    common_init_result iparams;
+    auto mparams = common_model_params_to_llama(params);
+
+    llama_model * model = nullptr;
+
+    if (!params.hf_repo.empty() && !params.hf_file.empty()) {
+        model = common_load_model_from_hf(params.hf_repo, params.hf_file, params.model, params.hf_token, mparams);
+    } else if (!params.model_url.empty()) {
+        model = common_load_model_from_url(params.model_url, params.model, params.hf_token, mparams);
+    } else {
+        model = llama_model_load_from_file(params.model.c_str(), mparams);
+    }
+
+    if (model == NULL) {
+        LOG_ERR("%s: failed to load model '%s'\n", __func__, params.model.c_str());
+        return iparams;
+    }
+
+    const llama_vocab * vocab = llama_model_get_vocab(model);
+
+    if (params.reranking) {
+        bool ok = true;
+
+        if (llama_vocab_bos(vocab) == LLAMA_TOKEN_NULL) {
+            LOG_WRN("%s: warning: vocab does not have a  BOS token, reranking will not work\n", __func__);
+            ok = false;
+        }
+
+        if (llama_vocab_eos(vocab) == LLAMA_TOKEN_NULL) {
+            LOG_WRN("%s: warning: vocab does not have an EOS token, reranking will not work\n", __func__);
+            ok = false;
+        }
+
+        if (llama_vocab_sep(vocab) == LLAMA_TOKEN_NULL) {
+            LOG_WRN("%s: warning: vocab does not have a  SEP token, reranking will not work\n", __func__);
+            ok = false;
+        }
+
+        if (!ok) {
+            llama_model_free(model);
+
+            return iparams;
+        }
+    }
+
+    auto cparams = common_context_params_to_llama(params);
+
+    llama_context * lctx = llama_init_from_model(model, cparams);
+    if (lctx == NULL) {
+        LOG_ERR("%s: failed to create context with model '%s'\n", __func__, params.model.c_str());
+        llama_model_free(model);
+        return iparams;
+    }
+
+    if (params.ctx_shift && !llama_kv_cache_can_shift(lctx)) {
+        LOG_WRN("%s: KV cache shifting is not supported for this model, disabling KV cache shifting\n", __func__);
+        params.ctx_shift = false;
+    }
+
+    if (!params.control_vectors.empty()) {
+        if (params.control_vector_layer_start <= 0) params.control_vector_layer_start = 1;
+        if (params.control_vector_layer_end   <= 0) params.control_vector_layer_end   = llama_model_n_layer(model);
+
+        const auto cvec = common_control_vector_load(params.control_vectors);
+        if (cvec.n_embd == -1) {
+            llama_free(lctx);
+            llama_model_free(model);
+
+            return iparams;
+        }
+
+        int err = llama_apply_adapter_cvec(
+                lctx,
+                cvec.data.data(),
+                cvec.data.size(),
+                cvec.n_embd,
+                params.control_vector_layer_start,
+                params.control_vector_layer_end);
+        if (err) {
+            llama_free(lctx);
+            llama_model_free(model);
+
+            return iparams;
+        }
+    }
+
+    // load and optionally apply lora adapters
+    for (auto & la : params.lora_adapters) {
+        llama_adapter_lora_ptr lora;
+        lora.reset(llama_adapter_lora_init(model, la.path.c_str()));
+        if (lora == nullptr) {
+            LOG_ERR("%s: failed to apply lora adapter '%s'\n", __func__, la.path.c_str());
+            llama_free(lctx);
+            llama_model_free(model);
+            return iparams;
+        }
+
+        la.ptr = lora.get();
+        iparams.lora.emplace_back(std::move(lora)); // copy to list of loaded adapters
+    }
+
+    if (!params.lora_init_without_apply) {
+        common_set_adapter_lora(lctx, params.lora_adapters);
+    }
+
+    if (params.sampling.ignore_eos && llama_vocab_eos(vocab) == LLAMA_TOKEN_NULL) {
+        LOG_WRN("%s: warning: vocab does not have an EOS token, ignoring --ignore-eos\n", __func__);
+        params.sampling.ignore_eos = false;
+    }
+
+    if (params.sampling.ignore_eos) {
+        for (llama_token i = 0; i < llama_vocab_n_tokens(vocab); i++) {
+            if (llama_vocab_is_eog(vocab, i)) {
+                LOG_INF("%s: added %s logit bias = %f\n", __func__, common_token_to_piece(lctx, i).c_str(), -INFINITY);
+                params.sampling.logit_bias.push_back({i, -INFINITY});
+            }
+        }
+    }
+
+    if (params.sampling.penalty_last_n == -1) {
+        LOG_INF("%s: setting penalty_last_n to ctx_size = %d\n", __func__, llama_n_ctx(lctx));
+        params.sampling.penalty_last_n = llama_n_ctx(lctx);
+    }
+
+    if (params.sampling.dry_penalty_last_n == -1) {
+        LOG_INF("%s: setting dry_penalty_last_n to ctx_size = %d\n", __func__, llama_n_ctx(lctx));
+        params.sampling.dry_penalty_last_n = llama_n_ctx(lctx);
+    }
+
+    if (params.warmup) {
+        LOG_WRN("%s: warming up the model with an empty run - please wait ... (--no-warmup to disable)\n", __func__);
+
+        std::vector<llama_token> tmp;
+        llama_token bos = llama_vocab_bos(vocab);
+        llama_token eos = llama_vocab_eos(vocab);
+
+        // some models (e.g. T5) don't have a BOS token
+        if (bos != LLAMA_TOKEN_NULL) {
+            tmp.push_back(bos);
+        }
+        if (eos != LLAMA_TOKEN_NULL) {
+            tmp.push_back(eos);
+        }
+        if (tmp.empty()) {
+            tmp.push_back(0);
+        }
+
+        if (llama_model_has_encoder(model)) {
+            llama_encode(lctx, llama_batch_get_one(tmp.data(), tmp.size()));
+            llama_token decoder_start_token_id = llama_model_decoder_start_token(model);
+            if (decoder_start_token_id == LLAMA_TOKEN_NULL) {
+                decoder_start_token_id = bos;
+            }
+            tmp.clear();
+            tmp.push_back(decoder_start_token_id);
+        }
+        if (llama_model_has_decoder(model)) {
+            llama_decode_eagle(lctx, llama_batch_get_one(tmp.data(), std::min(tmp.size(), (size_t) params.n_batch)), ctx_tgt);
+        }
+        llama_kv_cache_clear(lctx);
+        llama_synchronize(lctx);
+        llama_perf_context_reset(lctx);
+    }
+
+    iparams.model.reset(model);
+    iparams.context.reset(lctx);
+
+    return iparams;
+}
+
 void common_set_adapter_lora(struct llama_context * ctx, std::vector<common_adapter_lora_info> & lora) {
     llama_clear_adapter_lora(ctx);
     for (auto & la : lora) {

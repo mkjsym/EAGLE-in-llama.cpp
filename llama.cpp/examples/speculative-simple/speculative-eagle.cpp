@@ -264,7 +264,7 @@ int main(int argc, char ** argv) {
         // 이전 토큰(id_last), 그리고 필요시 이전 기록(prompt_tgt)을 사용하여 draft 모델(ctx_dft)을 실행하고
         // 후보 토큰 시퀀스(draft)를 생성함.
         // 주석 수정: params_spec는 Target 모델 구조체가 아니라, Speculation 프로세스 파라미터임.
-        llama_tokens draft = common_speculative_gen_draft(spec, params_spec, prompt_tgt, id_last);
+        llama_tokens draft = common_speculative_gen_draft(spec, params_spec, prompt_tgt, id_last, ctx_tgt);
 
         //printf("Draft Generation Phase에 진입합니다.2\n");
         //fflush(stdout); // 버퍼를 비워 즉시 출력되도록 함
@@ -402,3 +402,369 @@ int main(int argc, char ** argv) {
 
     return 0; // 정상 종료
 }
+
+// #include "arg.h"         // Command-line argument parsing helpers
+// #include "common.h"      // Common helper functions for llama.cpp examples
+// #include "sampling.h"    // Token sampling strategies (temperature, top-k, top-p, etc.)
+// #include "speculative.h" // Helper functions specifically for speculative decoding
+// #include "log.h"         // Logging utilities (LOG_INF, LOG_ERR, etc.)
+// #include "llama.h"       // Core llama.cpp library header
+
+// #include <cstdio>
+// #include <cstring>
+// #include <string>
+// #include <vector>
+// #include <iostream>
+// #include <chrono> // For timing if ggml_time_us is not sufficient (though it usually is)
+
+// int main(int argc, char ** argv) {
+//     // 1. 파라미터 초기화 및 파싱
+//     common_params params; // 프로그램 실행에 필요한 파라미터들을 담을 구조체
+
+//     // common_params_parse: 커맨드 라인 인자(argc, argv)를 파싱하여 params 구조체를 채움
+//     // LLAMA_EXAMPLE_SPECULATIVE: 이 예제가 speculative decoding용임을 명시
+//     if (!common_params_parse(argc, argv, params, LLAMA_EXAMPLE_SPECULATIVE)) {
+//         return 1; // 파싱 실패 시 종료
+//     }
+
+//     // 생성할 토큰 수(--n-predict) 유효성 검사 (This already serves as the maximum token limit)
+//     if (params.n_predict < -1) {
+//         LOG_ERR("%s: --n-predict must be >= -1\n", __func__);
+//         return 1;
+//     }
+
+//     // 2. 기본 초기화
+//     common_init(); // 주석: llama 로그 파일 생성 (및 기타 공통 초기화, 예: 랜덤 시드 설정)
+
+//     // Speculative decoding에는 draft 모델 경로가 필수 (--model-draft)
+//     if (params.speculative.model.empty()) {
+//         LOG_ERR("%s: --model-draft is required\n", __func__);
+//         return 1;
+//     }
+
+//     // llama.cpp 백엔드 초기화 (CPU, CUDA, Metal 등)
+//     llama_backend_init();
+//     // NUMA (Non-Uniform Memory Access) 최적화 초기화 (설정된 경우)
+//     llama_numa_init(params.numa);
+
+//     // 3. 모델 및 컨텍스트 포인터 선언
+//     llama_model * model_tgt = NULL; // Target 모델 포인터
+//     //llama_model * model_dft = NULL; // Draft 모델 포인터 (여기서는 직접 사용 안 함)
+//     llama_context * ctx_tgt = NULL; // Target 모델 컨텍스트 포인터
+//     llama_context * ctx_dft = NULL; // Draft 모델 컨텍스트 포인터
+
+//     // 4. Target 모델 로딩
+//     // common_init_from_params: 파라미터(params)를 사용하여 모델 파일 로드 및 컨텍스트 생성
+//     // 주석: target model, context 초기화 - 정확함. 모델 파일 경로, GPU 레이어 수, 컨텍스트 크기 등 설정 적용
+//     common_init_result llama_init_tgt = common_init_from_params(params);
+
+//     // common_init_result 객체에서 실제 모델 및 컨텍스트 포인터 가져오기
+//     // 주석: llama_init_tgt 객체로부터 model/context 호출 - 정확함. (.get()은 스마트 포인터에서 원시 포인터를 얻음)
+//     model_tgt = llama_init_tgt.model.get();
+//     ctx_tgt   = llama_init_tgt.context.get();
+
+//     // 모델로부터 어휘 사전(vocabulary) 가져오기
+//     // 주석: model 객체로부터 vocab 호출 - 정확함.
+//     const llama_vocab * vocab = llama_model_get_vocab(model_tgt);
+
+//     // 5. Draft 모델 로딩
+//     // Draft 모델에 적용할 파라미터들을 speculative 설정에서 가져와 params 구조체에 덮어쓰기
+//     // (예: --model-draft-gpu-layers 등)
+//     params.devices         = params.speculative.devices;
+//     params.model           = params.speculative.model; // Draft 모델 경로로 변경
+//     params.n_ctx           = params.speculative.n_ctx;
+//     params.n_batch         = params.speculative.n_ctx > 0 ? params.speculative.n_ctx : params.n_batch;
+//     params.n_gpu_layers   = params.speculative.n_gpu_layers;
+//     // Draft 모델용 CPU 스레드 수 설정 (별도 지정 시)
+//     if (params.speculative.cpuparams.n_threads > 0) {
+//         params.cpuparams.n_threads = params.speculative.cpuparams.n_threads;
+//     }
+//     params.cpuparams_batch.n_threads = params.speculative.cpuparams_batch.n_threads;
+
+//     // 수정된 파라미터(주로 draft 모델 경로)를 사용하여 draft 모델 로드 및 컨텍스트 생성
+//     // 주석: draft model, context 초기화 - 정확함.
+//     common_init_result llama_init_dft = common_init_from_params_eagle(params, ctx_tgt);
+
+//     // Draft 모델 컨텍스트 포인터 가져오기
+//     //model_dft = llama_init_dft.model.get(); // 모델 포인터는 직접 사용 안 함
+//     // 주석: llama_init_dft 객체로부터 context 호출 - 정확함.
+//     ctx_dft   = llama_init_dft.context.get();
+
+//     // 6. 모델 호환성 검사
+//     // Target 모델과 Draft 모델이 speculative decoding에 사용 가능하도록 호환되는지 확인
+//     // (예: 어휘 사전, 임베딩 차원 등)
+//     // 주석: target model과 draft model이 호환되는지 검사 - 정확함.
+//     if (!common_speculative_are_compatible(ctx_tgt, ctx_dft)) {
+//         return 1;
+//     }
+
+//     // 7. 프롬프트 토큰화
+//     std::vector<llama_token> inp; // 토큰 ID들을 저장할 벡터
+//     // common_tokenize: 입력 프롬프트(params.prompt)를 토큰 ID 시퀀스로 변환
+//     // 내부적으로 target 컨텍스트(ctx_tgt)의 어휘 사전을 사용함.
+//     // true, true: 각각 BOS(문장 시작) 토큰 추가 여부, 특수 토큰 처리 여부일 가능성 높음.
+//     // 주석: target model과 호환되는 vocab을 내부에서 호출한 뒤 tokenize - 정확함.
+//     inp = common_tokenize(ctx_tgt, params.prompt, true, true);
+
+//     // 프롬프트 길이가 Target 모델의 컨텍스트 크기 또는 배치 크기를 초과하는지 검사
+//     if (llama_n_ctx(ctx_tgt) < (uint32_t) inp.size()) {
+//         LOG_ERR("%s: the prompt exceeds the context size (%d tokens, ctx %d)\n", __func__, (int) inp.size(), llama_n_ctx(ctx_tgt));
+//         return 1;
+//     }
+//     if (llama_n_batch(ctx_tgt) < (uint32_t) inp.size()) {
+//         LOG_ERR("%s: the prompt exceeds the batch size (%d tokens, batch %d)\n", __func__, (int) inp.size(), llama_n_batch(ctx_tgt));
+//         return 1;
+//     }
+
+//     LOG_INF("\n\n"); // 로그 가독성을 위한 개행
+
+//     // 토큰화된 프롬프트를 다시 텍스트로 변환하여 출력 (디버깅 목적)
+//     for (auto id : inp) {
+//         LOG_INF("%s", common_token_to_piece(ctx_tgt, id).c_str());
+//     }
+//     fflush(stdout);
+
+//     // 8. Speculative Decoding 파라미터 및 카운터 초기화
+//     int n_draft        = params.speculative.n_max;      // 매 스텝 생성할 최대 draft 토큰 수
+//     int n_draft_min    = params.speculative.n_min;      // 유효한 draft로 간주할 최소 토큰 수
+//     float p_min        = params.speculative.p_min;      // 관련 파라미터 (예: 최소 확률 등, common_speculative_params에서 사용)
+//     int n_predict      = 0;                             // 총 생성된 토큰 수 (Target 모델 기준, 최종 출력 토큰 수)
+//     int n_drafted      = 0;                             // 총 생성 시도된 draft 토큰 수
+//     int n_accept       = 0;                             // 총 수락된 draft 토큰 수
+//     bool has_eos       = false;                         // End-of-Sentence 토큰 생성 여부 플래그
+//     int64_t t_draft_us = 0;                             // [추가] Draft 모델 생성에 소요된 총 시간 (마이크로초)
+
+//     // ================================================
+//     // 여기까지는 표준 초기화 과정
+//     // Speculative decoding 관련 핵심 로직 시작
+//     // ================================================
+
+//     const auto t_enc_start = ggml_time_us(); // 프롬프트 처리 시간 측정 시작
+
+//     // 9. Target 모델용 샘플러 초기화
+//     // common_sampler_init: Target 모델(model_tgt)과 샘플링 파라미터(params.sampling)를 사용하여 샘플러 객체 생성
+//     // 샘플러는 생성된 로짓(logits)에서 다음 토큰을 선택하는 방식을 정의 (온도, top-k, top-p 등)
+//     // 주석: target model과 호환되는 sampler 객체를 생성해 반환 - 정확함.
+//     struct common_sampler * smpl = common_sampler_init(model_tgt, params.sampling);
+
+//     LOG_INF("\nModel Initialized\n"); // 모델 초기화 완료 메시지
+
+//     // 10. 초기 프롬프트 처리 (KV 캐시 워밍업)
+//     // llama_decode_init (또는 llama_decode): 프롬프트 토큰들(마지막 토큰 제외)을 Target 모델에 입력하여
+//     // 내부 상태(특히 KV 캐시)를 초기화/워밍업함.
+//     // llama_batch_get_one: 단일 시퀀스를 처리하기 위한 임시 배치 생성.
+//     // inp.size() - 1: 마지막 토큰은 루프 시작 시 처리하므로 제외.
+//     // 주석: 이 부분은 뭐하는 건지 정확히 모르겠다.. -> 초기 프롬프트를 Target 모델에 입력하여 KV 캐시를 채우는 과정입니다. - 정확함.
+//     llama_decode_init(ctx_tgt, llama_batch_get_one(inp.data(), inp.size() - 1)); // KV 캐시 워밍업
+
+//     // 마지막 프롬프트 토큰은 따로 저장하여 루프의 첫 입력으로 사용
+//     llama_token id_last = inp.back();
+
+//     // 처리된 프롬프트 토큰들(마지막 제외)을 저장하는 벡터 (주로 draft 생성 시 참조 가능성)
+//     // 주석: 토큰화된 프롬프트에 target model의 컨텍스트 정보를 저장? -> 처리된 프롬프트 기록(마지막 제외)을 저장하는 벡터입니다. - 정확함.
+//     llama_tokens prompt_tgt(inp.begin(), inp.end() - 1);
+//     prompt_tgt.reserve(llama_n_ctx(ctx_tgt)); // 메모리 예비 할당
+
+//     // 현재까지 처리된 토큰 수 (= KV 캐시 내 위치)
+//     int n_past = inp.size() -1; // 워밍업에서 마지막 토큰은 제외했으므로 -1
+
+//     // 11. Speculator 초기화
+//     // Speculative decoding 파라미터 설정
+//     struct common_speculative_params params_spec; // 주석: speculator 구조체 생성, 변수 초기화 - params_spec는 파라미터 구조체 - 정확함
+//     params_spec.n_draft = n_draft;
+//     params_spec.n_reuse = llama_n_ctx(ctx_dft) - n_draft; // KV 캐시 재사용 관련 파라미터일 수 있음
+//     params_spec.p_min   = p_min;
+
+//     // common_speculative_init: Draft 모델 컨텍스트(ctx_dft)를 사용하여 speculator 헬퍼 객체 생성
+//     // 이 객체는 draft 토큰 생성 로직을 담당하며, 필요한 내부 상태나 버퍼를 가질 수 있음.
+//     // 주석: draft model의 context를 사용해서 speculative 구조체를 생성... - 정확함. (spec은 객체 포인터)
+//     struct common_speculative * spec = common_speculative_init(ctx_dft);
+
+//     // 12. Target 모델용 배치(Batch) 초기화
+//     // llama_batch_init: Target 모델에 토큰들을 전달하기 위한 재사용 가능한 배치 구조체 생성
+//     // llama_n_batch(ctx_tgt): 배치 크기, 0: 임베딩 입력 없음, 1: 시퀀스 ID 개수
+//     // 주석: target model과 관련된 연산을 위한 메모리 할당(연산을 llama_batch라는 단위로 수행?) - 정확함.
+//     llama_batch batch_tgt = llama_batch_init(llama_n_batch(ctx_tgt), 0, 1);
+
+//     const auto t_enc_end = ggml_time_us(); // 프롬프트 처리 시간 측정 종료
+//     const auto t_dec_start = ggml_time_us(); // 토큰 생성 시간 측정 시작
+
+//     LOG_INF("\n");
+
+//     // 13. 메인 생성 루프
+//     while (true) {
+//         // 13.1. Draft 토큰 생성
+//         // common_speculative_gen_draft: speculator 객체(spec)와 파라미터(params_spec),
+//         // 이전 토큰(id_last), 그리고 필요시 이전 기록(prompt_tgt)을 사용하여 draft 모델(ctx_dft)을 실행하고
+//         // 후보 토큰 시퀀스(draft)를 생성함.
+//         // [추가] Draft 생성 시간 측정 시작
+//         const auto t_draft_start_iter = ggml_time_us();
+//         llama_tokens draft = common_speculative_gen_draft(spec, params_spec, prompt_tgt, id_last, ctx_tgt);
+//         // [추가] Draft 생성 시간 측정 종료 및 누적
+//         const auto t_draft_end_iter = ggml_time_us();
+//         t_draft_us += (t_draft_end_iter - t_draft_start_iter);
+
+
+//         // 13.2. Target 모델 입력 배치 준비
+//         common_batch_clear(batch_tgt); // 이전 배치 내용 초기화
+
+//         // 마지막으로 수락된 토큰(id_last)을 현재 KV 캐시 위치(n_past)에 추가. n_past는 사용 후 증가됨 (++).
+//         // 이 토큰에 대한 로짓이 필요하므로 logits_all=true (마지막 파라미터)
+//         common_batch_add(batch_tgt, id_last, n_past++, { 0 }, true);
+
+//         int n_draft_cur = 0; // 현재 스텝에서 검증할 draft 토큰 수
+//         // 생성된 draft 토큰들을 Target 배치에 추가 (최소 길이 조건 충족 시)
+//         if (draft.size() >= (size_t) n_draft_min) {
+//             n_draft_cur = draft.size();
+//             for (size_t i = 0; i < draft.size(); ++i) {
+//                 // id_last 다음 위치부터 draft 토큰들을 순서대로 배치에 추가
+//                 // 각 draft 토큰 위치에서도 로짓이 필요하므로 logits_all=true
+//                 common_batch_add(batch_tgt, draft[i], n_past + i, { 0 }, true);
+//             }
+//         } else {
+//             draft.clear(); // 너무 짧은 draft는 무시
+//         }
+
+//         // 13.3. Target 모델 디코딩 (Forward Pass)
+//         // 준비된 배치(id_last + 유효 draft 토큰들)를 Target 모델(ctx_tgt)에 입력하여
+//         // 각 토큰 위치에 대한 로짓(logits)을 계산함.
+//         // 주석: 여기가 타겟 모델 forward 시작점인듯 - 정확함.
+//         llama_decode(ctx_tgt, batch_tgt);
+
+//         // 13.4. 샘플링 및 Draft 토큰 수락 검증
+//         // common_sampler_sample_and_accept_n: Target 모델의 로짓과 샘플러(smpl), 그리고 원본 draft 토큰들을 비교.
+//         // Target 모델의 예측과 draft 토큰이 일치하는지 순차적으로 확인하여,
+//         // 일치하는(수락된) 토큰 시퀀스(ids)를 반환함. 최소 1개(id_last 다음 토큰)는 항상 포함됨.
+//         const auto ids = common_sampler_sample_and_accept_n(smpl, ctx_tgt, draft);
+
+//         GGML_ASSERT(ids.size() > 0); // 최소 1개 토큰은 항상 수락됨을 단언
+
+//         // 13.5. 카운터 업데이트
+//         // n_past: 수락된 토큰들만큼 KV 캐시 위치 업데이트. id_last 위치는 이미 증가했으므로 추가 수락분(ids.size() - 1)만큼 더함.
+//         n_past   += ids.size() - 1;
+//         if (!draft.empty()) { // 유효한 draft가 있었던 경우에만 카운트
+//             n_drafted += n_draft_cur;      // 시도된 draft 토큰 수 누적
+//             n_accept  += ids.size() - 1;   // 수락된 draft 토큰 수 누적 (ids[0]은 draft가 아님)
+//         }
+//         n_predict += ids.size();           // 총 생성된 토큰 수 누적 (Target 모델 기준, 최종 출력 수)
+
+//         // 13.6. 수락된 토큰 처리 및 출력
+//         for (size_t i = 0; i < ids.size(); ++i) {
+//             // 이전 id_last를 prompt_tgt 기록에 추가 (다음 draft 생성 시 참조 가능성)
+//             // ids[0]은 id_last 다음에 온 것이므로, id_last 자체를 추가.
+//             if (i == 0) {
+//                  prompt_tgt.push_back(id_last);
+//             } else {
+//                  // ids[1] 이후 토큰들은 이전 수락 토큰(ids[i-1])을 추가
+//                  prompt_tgt.push_back(ids[i-1]);
+//             }
+
+//             // 현재 수락된 토큰으로 id_last 업데이트 (다음 루프 입력용)
+//             id_last = ids[i];
+
+//             // EOS 토큰 검사
+//             if (llama_vocab_is_eog(vocab, id_last)) {
+//                 has_eos = true;
+//                 // EOS 토큰도 출력하고 종료
+//                 const std::string token_str = common_token_to_piece(ctx_tgt, id_last);
+//                 LOG_INF("%s", token_str.c_str());
+//                 fflush(stdout);
+//                 break; // EOS면 내부 루프 탈출
+//             }
+
+//             // 수락된 토큰을 텍스트로 변환하여 출력
+//             const std::string token_str = common_token_to_piece(ctx_tgt, id_last);
+//             // 컬러 출력 처리 (옵션)
+//             // i > 0 인 경우만 draft에서 수락된 토큰임
+//             if (params.use_color && i > 0 && !draft.empty()) {
+//                  LOG_INF("\u001b[%dm%s\u001b[37m", (36 - (i-1) % 6), token_str.c_str());
+//             } else {
+//                  LOG_INF("%s", token_str.c_str());
+//             }
+//             fflush(stdout); // 즉시 출력되도록 버퍼 비우기
+//         }
+
+//         // EOS가 내부 루프에서 발생했으면 외부 루프도 탈출
+//         if (has_eos) {
+//             break;
+//         }
+
+//         LOG_DBG("accepted %d/%d draft tokens, the last target token is: (%d)\n", (int) ids.size() - 1, (int) n_draft_cur, id_last);
+
+//         // 13.7. KV 캐시 정리 (Rollback)
+//         // Target 모델의 KV 캐시에서 거절된 draft 토큰들에 해당하는 항목들을 제거/무효화.
+//         // 현재 유효한 마지막 위치인 n_past 이후의 캐시 내용을 제거하여 다음 스텝과 일관성 유지.
+//         {
+//             LOG_DBG("clear kv cache from any extra tokens, n_past = %d\n", n_past);
+//             llama_kv_cache_seq_rm(ctx_tgt, 0, n_past, -1); // 시퀀스 0의 n_past 위치 이후 캐시 제거
+//         }
+
+//         // 13.8. 루프 종료 조건 검사 (최대 생성 길이 도달)
+//         // params.n_predict == -1 이면 무한 생성 (EOS 만날 때까지)
+//         if (params.n_predict != -1 && n_predict >= params.n_predict) {
+//             break; // 최대 생성 길이에 도달했으면 외부 루프 탈출
+//         }
+//     } // end of while(true)
+
+//     auto t_dec_end = ggml_time_us(); // 토큰 생성 시간 측정 종료
+
+//     const int n_input = inp.size(); // 입력 프롬프트 토큰 수
+
+//     // 14. 결과 로깅 및 성능 출력
+//     LOG_INF("\n\n");
+//     LOG_INF("-------------------------------- Performance Metrics --------------------------------\n");
+
+//     // Overall Performance (Based on Target Accepted Tokens)
+//     LOG_INF("Overall Performance (Target Accepted Tokens):\n");
+//     const float t_enc_sec = (t_enc_end - t_enc_start) / 1e6f;
+//     const float t_dec_sec = (t_dec_end - t_dec_start) / 1e6f;
+//     const float enc_speed = n_input / (t_enc_sec + 1e-9f); // Add epsilon for safety
+//     const float dec_speed = n_predict / (t_dec_sec + 1e-9f); // Add epsilon for safety
+//     LOG_INF("  - Prompt Encoded: %4d tokens in %8.3f seconds ( %8.3f t/s)\n", n_input, t_enc_sec, enc_speed);
+//     LOG_INF("  - Tokens Generated: %4d tokens in %8.3f seconds ( %8.3f t/s)\n", n_predict, t_dec_sec, dec_speed);
+
+//     // Speculative Decoding Specific Stats
+//     LOG_INF("\nSpeculative Decoding Stats:\n");
+//     LOG_INF("  - Max Draft Tokens per Step (n_draft): %d\n", n_draft);
+//     LOG_INF("  - Total Target Tokens Predicted (n_predict): %d\n", n_predict);
+//     LOG_INF("  - Total Draft Tokens Attempted (n_drafted): %d\n", n_drafted);
+//     LOG_INF("  - Total Draft Tokens Accepted (n_accept):   %d\n", n_accept);
+//     if (n_drafted > 0) { // 0으로 나누기 방지
+//         LOG_INF("  - Acceptance Rate: %.3f %% (%d / %d)\n", 100.0f * n_accept / n_drafted, n_accept, n_drafted);
+//     } else {
+//          LOG_INF("  - Acceptance Rate: N/A (no drafts attempted)\n");
+//     }
+
+//     // [추가] Draft Model Performance
+//     LOG_INF("\nDraft Model Performance:\n");
+//     const float t_draft_sec = t_draft_us / 1e6f;
+//     if (t_draft_us > 0 && n_drafted > 0) {
+//         const float draft_speed = n_drafted / (t_draft_sec + 1e-9f); // Add epsilon for safety
+//         LOG_INF("  - Drafted %4d tokens in %8.3f seconds ( %8.3f t/s)\n",
+//                 n_drafted, t_draft_sec, draft_speed);
+//     } else if (n_drafted > 0) {
+//         LOG_INF("  - Drafted %4d tokens, but timing data insufficient.\n", n_drafted);
+//     } else {
+//         LOG_INF("  - No draft tokens were generated or measured.\n");
+//     }
+
+//     // Detailed Model Performance (Optional)
+//     LOG_INF("\nDetailed Draft Model Stats:\n");
+//     llama_perf_context_print(ctx_dft);
+
+//     LOG_INF("\nDetailed Target Model Stats:\n");
+//     common_perf_print(ctx_tgt, smpl); // common_perf_print는 ctx_tgt 성능 정보 출력
+
+//     LOG_INF("-------------------------------------------------------------------------------------\n");
+
+//     // 15. 자원 해제
+//     common_sampler_free(smpl); // 샘플러 객체 메모리 해제
+//     common_speculative_free(spec); // Speculator 객체 메모리 해제
+//     llama_batch_free(batch_tgt);   // Target 배치 메모리 해제
+//     // 모델 및 컨텍스트는 common_init_result의 소멸자(destructor)가 자동으로 처리 (스마트 포인터 사용 시)
+//     llama_backend_free(); // llama.cpp 백엔드 자원 해제
+
+//     LOG_INF("\n\n");
+
+//     return 0; // 정상 종료
+// }
