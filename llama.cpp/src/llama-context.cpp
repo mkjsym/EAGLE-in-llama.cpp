@@ -899,6 +899,7 @@ size_t llama_output_reserve(struct llama_context & lctx, size_t n_outputs) {
 
     const size_t logits_size = has_logits ? n_vocab*n_outputs_max : 0;
     const size_t embd_size   = has_embd   ?  n_embd*n_outputs_max : 0;
+    const size_t hidd_size   = has_embd   ?  n_embd*n_outputs_max : 0;
 
     if (lctx.output_ids.empty()) {
         // init, never resized afterwards
@@ -939,11 +940,12 @@ size_t llama_output_reserve(struct llama_context & lctx, size_t n_outputs) {
 
     lctx.logits = has_logits ? output_base               : nullptr;
     lctx.embd   = has_embd   ? output_base + logits_size : nullptr;
-    lctx.hidden = has_embd   ? output_base + logits_size : nullptr;
+    lctx.hidden = has_embd   ? output_base + logits_size + embd_size : nullptr;
 
     lctx.output_size = n_outputs_max;
     lctx.logits_size = logits_size;
     lctx.embd_size   = embd_size;
+    lctx.hidd_size = hidd_size;
 
     // set all ids as invalid (negative)
     std::fill(lctx.output_ids.begin(), lctx.output_ids.end(), -1);

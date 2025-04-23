@@ -1851,13 +1851,15 @@ struct llm_build_context {
         struct ggml_tensor * hidd;
 
         inpL = llm_build_inp_embd(ctx0, lctx, hparams, ubatch, model.tok_embd, cb);
-        hidd = llm_build_inp_hidd(ctx0, lctx, hparams, ubatch, cb);
+        if (lctx.hidden) {
+            hidd = llm_build_inp_hidd(ctx0, lctx, hparams, ubatch, cb);
+        }
 
         //hidden_state 연결...
 
         struct ggml_tensor * embd_hs;
         // edit here (concat, fc)
-        if (lctx.hidden) {
+        if (hidd) {
             embd_hs = ggml_concat(ctx0, inpL, hidd, 0);
         }
         else {

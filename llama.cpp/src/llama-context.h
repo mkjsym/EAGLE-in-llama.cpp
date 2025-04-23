@@ -67,6 +67,7 @@ struct llama_context {
     // populated only when pooling_type == LLAMA_POOLING_TYPE_NONE
     size_t  embd_size = 0; // capacity (of floats) for embeddings
     float * embd      = nullptr;
+    size_t hidd_size = 0;
     float * hidden    = nullptr; //eagle
 
     // sequence embeddings output (map of [n_embd] vectors)
