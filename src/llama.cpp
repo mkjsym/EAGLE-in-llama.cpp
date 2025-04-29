@@ -356,7 +356,7 @@ static struct ggml_tensor * llm_build_lora_mm(
         struct llama_adapter_lora_weight * lw = it.first->get_weight(w);
         if (lw == nullptr) {
             printf("lmhead 왜 안붙어??\n\n");
-            fflush(stdout); // 버퍼를 비워 즉시 출력되도록 함
+            //fflush(stdout); // 버퍼를 비워 즉시 출력되도록 함
             continue;
         }
         const float adapter_scale = it.second;
@@ -366,12 +366,12 @@ static struct ggml_tensor * llm_build_lora_mm(
             ggml_mul_mat(ctx0, lw->a, cur)
         );
         printf("lmhead 붙었음\n\n");
-        fflush(stdout); // 버퍼를 비워 즉시 출력되도록 함
+        //fflush(stdout); // 버퍼를 비워 즉시 출력되도록 함
         ab_cur = ggml_scale(ctx0, ab_cur, scale);
         res = ggml_add(ctx0, res, ab_cur);
     }
     // printf("lmhead 왜 안붙어??\n\n");
-    fflush(stdout); // 버퍼를 비워 즉시 출력되도록 함
+    //fflush(stdout); // 버퍼를 비워 즉시 출력되도록 함
     return res;
 }
 
@@ -9231,6 +9231,32 @@ static int llama_prepare_sbatch(
         /* simple_split */ !lctx.kv_self.recurrent,
         /* logits_all   */ n_outputs == n_tokens_all);
 
+    // float * embd_out = lctx.hidden;
+
+    // if (embd_out != nullptr) { // embd_out은 ctx_dft->hidden을 가리킴
+    //     const int n_embd = lctx.model.hparams.n_embd;
+    //     const int n_outputs_new = lctx.n_outputs;
+    //     if (n_outputs_new > 0) {
+    //         printf("Saving Draft Hidden State (saved to ctx_dft->hidden) @ %p:\n", (void*)embd_out);
+    //         // 첫 번째 토큰의 처음 3개 값 출력
+    //         printf("  [Token 0 Start]: %f, %f, %f\n",
+    //             ((float*)embd_out)[0],
+    //             ((float*)embd_out)[1],
+    //             ((float*)embd_out)[2]);
+    //         // 마지막 토큰의 마지막 3개 값 출력 (n_outputs_new > 0 보장됨)
+    //         int last_token_idx = n_outputs_new - 1;
+    //         int last_elem_start_idx = last_token_idx * n_embd + n_embd - 3;
+    //         if (n_embd >= 3) {
+    //             printf("  [Token %d End]: %f, %f, %f\n",
+    //                     last_token_idx,
+    //                     ((float*)embd_out)[last_elem_start_idx],
+    //                     ((float*)embd_out)[last_elem_start_idx + 1],
+    //                     ((float*)embd_out)[last_elem_start_idx + 2]);
+    //         }
+    //         //fflush(stdout);
+    //     }
+    // }
+
     // reserve output buffer
     if (llama_output_reserve(lctx, n_outputs) < n_outputs) {
         LLAMA_LOG_ERROR("%s: could not reserve space for batch with %u outputs\n", __func__, n_outputs);
@@ -10098,62 +10124,6 @@ const int64_t n_vocab = vocab.n_tokens();
 
 const int64_t n_tokens = inp_batch.n_tokens;
 
-/////////////////////////////////////////////////////////////
-size_t num_elements = (size_t)n_tokens * n_embd;
-float * src_ptr = (float*)lctx.embd;
-
-if (n_tokens > 0 && n_embd > 0) {
-    float* check_ptr = (float*)lctx.embd;
-    printf("DEBUG: Checking source data just before copy @ %p\n", (void*)check_ptr);
-    printf("DEBUG: Source [0]=%f, [1]=%f, [2]=%f\n", check_ptr[0], check_ptr[1], check_ptr[2]);
-    fflush(stdout);
-
-    // ... 여기에 데이터 복사 코드 ...
-}
-
-std::vector<float> copied_embd_data(src_ptr, src_ptr + num_elements);
-/////////////////////////////////////////////////////////////
-
-if (!copied_embd_data.empty()) {
-    printf("  Copied Data [Token 0 Start]:");
-    // 벡터 크기와 3 중 작은 값만큼만 출력 (벡터가 3개 미만일 수 있음)
-    for (size_t i = 0; i < std::min((size_t)3, copied_embd_data.size()); ++i) {
-        printf(" %f", copied_embd_data[i]); // 벡터 요소 접근은 [] 사용
-    }
-    printf("\n");
-
-    // 마지막 토큰의 마지막 3개 요소 출력 (충분한 요소가 있을 경우)
-    if (copied_embd_data.size() >= 3) { // 최소 3개 요소가 있는지 확인
-         printf("  Copied Data [Last 3 Elements]:");
-         size_t last_elem_start_idx = copied_embd_data.size() - 3;
-         for (size_t i = 0; i < 3; ++i) {
-              printf(" %f", copied_embd_data[last_elem_start_idx + i]);
-         }
-         printf("\n");
-    }
-}
-fflush(stdout);
-
-if (n_tokens > 0) {
-    printf("5555555555Draft Hidden State (saved to ctx_dft->hidden) @ %p:\n", (void*)lctx.embd);
-    // 첫 번째 토큰의 처음 3개 값 출력
-    printf("  [Token 0 Start]: %f, %f, %f\n",
-        ((float*)lctx.embd)[0],
-        ((float*)lctx.embd)[1],
-        ((float*)lctx.embd)[2]);
-    // 마지막 토큰의 마지막 3개 값 출력 (n_outputs_new > 0 보장됨)
-    int last_token_idx = n_tokens - 1;
-    int last_elem_start_idx = last_token_idx * n_embd + n_embd - 3;
-    if (n_embd >= 3) {
-        printf("  [Token %d End]: %f, %f, %f\n",
-                last_token_idx,
-                ((float*)lctx.embd)[last_elem_start_idx],
-                ((float*)lctx.embd)[last_elem_start_idx + 1],
-                ((float*)lctx.embd)[last_elem_start_idx + 2]);
-    }
-    fflush(stdout);
-}
-
 // 4. 배치 처리 루프 (입력 배치를 더 작은 단위로 나누어 처리)
 uint32_t n_outputs = 0;       // 전체 배치에서 출력(로짓/임베딩)이 필요한 토큰 수
 uint32_t n_outputs_prev = 0; // 이전 서브-배치까지 처리된 출력 토큰 수
@@ -10169,29 +10139,6 @@ uint32_t n_outputs_prev = 0; // 이전 서브-배치까지 처리된 출력 토�
     }
 }
 
-//const int64_t n_embd   = hparams.n_embd;
-//const int64_t n_tokens = batch.n_tokens;
-lctx.embd = copied_embd_data.data();
-if (n_tokens > 0) {
-    printf("111111111111111111Draft Hidden State (saved to ctx_dft->hidden) @ %p:\n", (void*)lctx.embd);
-    // 첫 번째 토큰의 처음 3개 값 출력
-    printf("  [Token 0 Start]: %f, %f, %f\n",
-        ((float*)lctx.embd)[0],
-        ((float*)lctx.embd)[1],
-        ((float*)lctx.embd)[2]);
-    // 마지막 토큰의 마지막 3개 값 출력 (n_outputs_new > 0 보장됨)
-    int last_token_idx = n_tokens - 1;
-    int last_elem_start_idx = last_token_idx * n_embd + n_embd - 3;
-    if (n_embd >= 3) {
-        printf("  [Token %d End]: %f, %f, %f\n",
-                last_token_idx,
-                ((float*)lctx.embd)[last_elem_start_idx],
-                ((float*)lctx.embd)[last_elem_start_idx + 1],
-                ((float*)lctx.embd)[last_elem_start_idx + 2]);
-    }
-    fflush(stdout);
-}
-
 // 4.2. 업데이트 배치(ubatch) 처리 루프
 // sbatch에 남은 토큰이 없을 때까지 반복하여 작은 업데이트 배치(ubatch) 단위로 처리.
 while (lctx.sbatch.n_tokens > 0) {
@@ -10205,29 +10152,6 @@ while (lctx.sbatch.n_tokens > 0) {
             return ret;
         }
     }
-
-    const int64_t n_embd   = hparams.n_embd;
-const int64_t n_tokens = ubatch.n_tokens;
-
-if (n_tokens > 0) {
-    printf("222222222222222222Draft Hidden State (saved to ctx_dft->hidden) @ %p:\n", (void*)lctx.embd);
-    // 첫 번째 토큰의 처음 3개 값 출력
-    printf("  [Token 0 Start]: %f, %f, %f\n",
-        ((float*)lctx.embd)[0],
-        ((float*)lctx.embd)[1],
-        ((float*)lctx.embd)[2]);
-    // 마지막 토큰의 마지막 3개 값 출력 (n_outputs_new > 0 보장됨)
-    int last_token_idx = n_tokens - 1;
-    int last_elem_start_idx = last_token_idx * n_embd + n_embd - 3;
-    if (n_embd >= 3) {
-        printf("  [Token %d End]: %f, %f, %f\n",
-                last_token_idx,
-                ((float*)lctx.embd)[last_elem_start_idx],
-                ((float*)lctx.embd)[last_elem_start_idx + 1],
-                ((float*)lctx.embd)[last_elem_start_idx + 2]);
-    }
-    fflush(stdout);
-}
 
     // 4.2.2. 스레드 설정
     // ubatch 크기(토큰 수)에 따라 적절한 스레드 수와 스레드 풀 선택.
@@ -10298,7 +10222,7 @@ if (n_tokens > 0) {
 
     // 4.2.6. 그래프 메모리 할당 및 입력 설정
     ggml_backend_sched_alloc_graph(lctx.sched.get(), gf); // 스케줄러를 통해 그래프 내 텐서 메모리 할당
-    llama_set_inputs(lctx, ubatch); // ubatch 데이터를 그래프의 입력 텐서에 설정
+    llama_set_inputs(lctx, ubatch, ctx_tgt); // ubatch 데이터를 그래프의 입력 텐서에 설정
     //printf("아무래도 여기서 터지는듯1\n");
     // 4.2.7. 계산 그래프 실행 (실제 순방향 계산)
     const auto compute_status = llama_graph_compute(lctx, gf, n_threads, threadpool);
@@ -10348,7 +10272,7 @@ if (n_tokens > 0) {
                     //printf("embedding 추출1\n\n");
                     //fflush(stdout); // 버퍼를 비워 즉시 출력되도록 함
                     //float * embd_out = lctx.embd + n_outputs_prev*n_embd; // 출력 버퍼 내 위치 계산
-                    float * embd_out = lctx.embd + n_outputs_prev*n_embd; // 출력 버퍼 내 위치 계산
+                    float * embd_out = ctx_tgt.hidden + n_outputs_prev*n_embd; // 출력 버퍼 내 위치 계산
                     const int32_t n_outputs_new = lctx.n_outputs;
                     //printf("embedding 추출1-1\n\n");
                     if (n_outputs_new) {
@@ -10360,6 +10284,7 @@ if (n_tokens > 0) {
                     }
                     const int64_t n_embd   = hparams.n_embd;
 
+                    // llama.cpp 내 llama_decode_initial_impl 함수, ggml_backend_tensor_get_async 호출 후
                     // 비동기 복사가 완료될 때까지 기다립니다. (CPU 백엔드에서는 즉시 완료될 수 있음)
                     ggml_backend_synchronize(backend_embd); // backend_embd는 embd 텐서가 있는 백엔드
 
@@ -10367,7 +10292,7 @@ if (n_tokens > 0) {
                         const int n_embd = lctx.model.hparams.n_embd;
                         const int n_outputs_new = lctx.n_outputs;
                         if (n_outputs_new > 0) {
-                            printf("3333333333Draft Hidden State (saved to ctx_dft->hidden) @ %p:\n", (void*)embd_out);
+                            printf("Saving Draft Hidden State (saved to ctx_dft->hidden) @ %p:\n", (void*)embd_out);
                             // 첫 번째 토큰의 처음 3개 값 출력
                             printf("  [Token 0 Start]: %f, %f, %f\n",
                                 ((float*)embd_out)[0],
@@ -10383,7 +10308,7 @@ if (n_tokens > 0) {
                                         ((float*)embd_out)[last_elem_start_idx + 1],
                                         ((float*)embd_out)[last_elem_start_idx + 2]);
                             }
-                            fflush(stdout);
+                            //fflush(stdout);
                         }
                     }
                     
@@ -10633,7 +10558,7 @@ while (lctx.sbatch.n_tokens > 0) {
                     //printf("embedding 추출1\n\n");
                     //fflush(stdout); // 버퍼를 비워 즉시 출력되도록 함
                     // float * embd_out = lctx.embd + n_outputs_prev*n_embd; // 출력 버퍼 내 위치 계산
-                    float * embd_out = ctx_dft.embd + n_outputs_prev*n_embd; // 출력 버퍼 내 위치 계산
+                    float * embd_out = lctx.hidden + n_outputs_prev*n_embd; // 출력 버퍼 내 위치 계산
                     const int32_t n_outputs_new = lctx.n_outputs;
                     //printf("embedding 추출1-1\n\n");
                     if (n_outputs_new) {
@@ -10669,7 +10594,7 @@ while (lctx.sbatch.n_tokens > 0) {
                                         ((float*)embd_out)[last_elem_start_idx + 1],
                                         ((float*)embd_out)[last_elem_start_idx + 2]);
                             }
-                            fflush(stdout);
+                            //fflush(stdout);
                         }
                     }
 
@@ -10899,8 +10824,8 @@ while (lctx.sbatch.n_tokens > 0) {
            case LLAMA_POOLING_TYPE_NONE:
                {
                    // extract token embeddings
-                   GGML_ASSERT(lctx.embd != nullptr);
-                   float * embd_out = lctx.embd + n_outputs_prev*n_embd;
+                   //GGML_ASSERT(lctx.embd != nullptr);
+                   float * embd_out = lctx.hidden + n_outputs_prev*n_embd;
                    const int32_t n_outputs_new = lctx.n_outputs;
 
                    if (n_outputs_new) {
@@ -11095,7 +11020,7 @@ static int llama_encode_impl(
 
     ggml_backend_sched_alloc_graph(lctx.sched.get(), gf);
 
-    llama_set_inputs(lctx, ubatch);
+    llama_set_inputs(lctx, ubatch, lctx);
 
     const auto compute_status = llama_graph_compute(lctx, gf, n_threads, threadpool);
     switch (compute_status) {
