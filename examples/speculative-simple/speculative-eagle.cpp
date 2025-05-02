@@ -43,19 +43,24 @@ int main(int argc, char ** argv) {
 
     // 3. 모델 및 컨텍스트 포인터 선언
     llama_model * model_tgt = NULL; // Target 모델 포인터
+    llama_model * model_tgt_no_reuse = NULL;
     //llama_model * model_dft = NULL; // Draft 모델 포인터 (여기서는 직접 사용 안 함)
     llama_context * ctx_tgt = NULL; // Target 모델 컨텍스트 포인터
+    llama_context * ctx_tgt_no_reuse = NULL;
     llama_context * ctx_dft = NULL; // Draft 모델 컨텍스트 포인터
 
     // 4. Target 모델 로딩
     // common_init_from_params: 파라미터(params)를 사용하여 모델 파일 로드 및 컨텍스트 생성
     // 주석: target model, context 초기화 - 정확함. 모델 파일 경로, GPU 레이어 수, 컨텍스트 크기 등 설정 적용
     common_init_result llama_init_tgt = common_init_from_params(params);
+    //common_init_result llama_init_tgt2 = common_init_from_params(params);
 
     // common_init_result 객체에서 실제 모델 및 컨텍스트 포인터 가져오기
     // 주석: llama_init_tgt 객체로부터 model/context 호출 - 정확함. (.get()은 스마트 포인터에서 원시 포인터를 얻음)
     model_tgt = llama_init_tgt.model.get();
+    model_tgt_no_reuse = llama_init_tgt.model.get();
     ctx_tgt   = llama_init_tgt.context.get();
+    ctx_tgt_no_reuse   = llama_init_tgt.context.get();
 
     // 모델로부터 어휘 사전(vocabulary) 가져오기
     // 주석: model 객체로부터 vocab 호출 - 정확함.
@@ -147,7 +152,90 @@ int main(int argc, char ** argv) {
     // llama_batch_get_one: 단일 시퀀스를 처리하기 위한 임시 배치 생성.
     // inp.size() - 1: 마지막 토큰은 루프 시작 시 처리하므로 제외.
     // 주석: 이 부분은 뭐하는 건지 정확히 모르겠다.. -> 초기 프롬프트를 Target 모델에 입력하여 KV 캐시를 채우는 과정입니다.
-    llama_decode_init(ctx_tgt, llama_batch_get_one(inp.data(), inp.size() - 1)); //이 부분은 뭐하는 건지 정확히 모르겠다.. 다시한번 체크
+    llama_batch temp_batch_tgt = llama_batch_init(llama_n_batch(ctx_tgt), 0, 1);
+
+    common_batch_clear(temp_batch_tgt);
+    int temp_n_past = 0;
+
+// 2. 입력 토큰들을 순회하며 배치에 추가:
+int n_input_tokens = inp.size() - 1; // 반복 횟수 (입력 토큰 개수)
+
+for (int i = 0; i < n_input_tokens; ++i) {
+    // 현재 추가할 토큰 ID
+    llama_token current_token_id = inp[i];
+
+    // 현재 토큰의 시퀀스 상 위치 (n_past 값 사용)
+    llama_pos current_pos = temp_n_past;
+
+    // 로짓(logits) 요청 여부 결정:
+    // 일반적으로 프롬프트(초기 입력) 처리 시에는 마지막 토큰에 대해서만 로짓을 계산하면 됩니다.
+    // 마지막 토큰인지 확인합니다.
+    bool request_logits = (i == n_input_tokens - 1);
+
+    // common_batch_add 함수를 사용하여 현재 토큰을 배치에 추가
+    // seq_id는 보통 0번 시퀀스를 사용하므로 { 0 } 으로 가정합니다.
+    // 실제 common_batch_add 함수의 인자에 맞게 조정해야 할 수 있습니다.
+    common_batch_add(temp_batch_tgt, current_token_id, current_pos, { 0 }, 1);
+
+    // 다음 토큰의 위치를 위해 n_past 값을 증가시킵니다.
+    temp_n_past++;
+}
+
+    llama_decode_init(ctx_tgt, temp_batch_tgt, ctx_dft); //이 부분은 뭐하는 건지 정확히 모르겠다.. 다시한번 체크
+
+    std::vector<float> hidden_state_backup;
+
+    // +++ Hidden State 백업 +++
+    //LOG_INF("Backing up hidden states...\n");
+    try {
+        // 1. Hidden State 포인터 가져오기 (llama_get_hiddens 함수 사용 가정)
+        float * hidden_ptr = llama_get_hiddens(ctx_tgt);
+
+        if (hidden_ptr != nullptr) {
+            // 2. Hidden State 크기 가져오기 (가장 일반적인 크기는 임베딩 차원)
+            // 주의: llama_get_hiddens가 정확히 어떤 크기의 데이터를 반환하는지에 따라 달라질 수 있습니다.
+            //       여기서는 단일 토큰에 대한 hidden state 벡터(크기 n_embd)를 가정합니다.
+            const int n_embd = llama_n_embd(model_tgt);
+
+            if (n_embd > 0) {
+                // 3. 백업 벡터 크기 조정 및 데이터 복사
+                hidden_state_backup.resize(n_embd * temp_n_past);
+                std::memcpy(hidden_state_backup.data(), hidden_ptr, n_embd * temp_n_past * sizeof(float));
+                //LOG_INF("Successfully backed up %d hidden state values.\n", n_embd * temp_n_past);
+
+                // (선택 사항) 백업된 값 일부 출력 확인
+                // LOG_INF("First few backed up hidden states: ");
+                // for(int i=0; i<std::min(5, n_embd); ++i) {
+                //     printf("%.6f ", hidden_state_backup[i]);
+                // }
+                // printf("\n");
+
+            } else {
+                //LOG_WARN("Warning: n_embd is 0, cannot determine hidden state size for backup.\n");
+            }
+        } else {
+            // 만약 llama_get_hiddens 함수가 없거나 null을 반환하면, 직접 접근 시도 (주의 필요)
+            // if (ctx_tgt->hidden != nullptr) { // llama_context 구조체에 'hidden' 멤버가 있다고 가정
+            //     const int n_embd = llama_n_embd(model_tgt);
+            //     if (n_embd > 0) {
+            //         hidden_state_backup.resize(n_embd);
+            //         std::memcpy(hidden_state_backup.data(), ctx_tgt->hidden, n_embd * sizeof(float));
+            //         LOG_INF("Successfully backed up %d hidden state values (direct access).\n", n_embd);
+            //     } else {
+            //          LOG_WARN("Warning: n_embd is 0, cannot determine hidden state size for backup (direct access).\n");
+            //     }
+            // } else {
+                 //LOG_WARN("Warning: Could not get hidden state pointer (llama_get_hiddens returned null or direct access failed). Backup skipped.\n");
+            // }
+        }
+    } catch (const std::exception& e) {
+        LOG_ERR("Error during hidden state backup: %s\n", e.what());
+        // 필요시 오류 처리
+    }
+    // +++++++++++++++++++++++++++++
+
+    // 임시 배치 메모리 해제
+    llama_batch_free(temp_batch_tgt);
 
     // 마지막 프롬프트 토큰은 따로 저장하여 루프의 첫 입력으로 사용
     llama_token id_last = inp.back();
@@ -158,7 +246,7 @@ int main(int argc, char ** argv) {
     prompt_tgt.reserve(llama_n_ctx(ctx_tgt)); // 메모리 예비 할당
 
     // 현재까지 처리된 토큰 수 (= KV 캐시 내 위치)
-    int n_past = inp.size();
+    int n_past = inp.size() - 1;
 
     // 11. Speculator 초기화
     // Speculative decoding 파라미터 설정
@@ -216,56 +304,29 @@ int main(int argc, char ** argv) {
     printf("{%s} First Token by Target Model\n\n", s.c_str()); // 출력
     fflush(stdout); // 버퍼를 비워 즉시 출력되도록 함
 
-    printf("여기부터 배치 처리가 시작됩니다.\n\n");
+    printf("Draft Generation Phase에 진입합니다.\n");
     fflush(stdout); // 버퍼를 비워 즉시 출력되도록 함
-    //배치 처리하는 부분 수정해야됨!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    // batch_tgt = llama_batch_get_one(&new_token_id, 1);
-    //common_batch_add(batch_tgt, id_last, n_past++, { 0 }, true);
-    // common_batch_add(batch_tgt, id_last, n_past++, { 0 }, true);
 
-    // 13.7. KV 캐시 정리 (Rollback)
-    // Target 모델의 KV 캐시에서 거절된 draft 토큰들에 해당하는 항목들을 제거/무효화.
-    // 현재 유효한 마지막 위치인 n_past 이후의 캐시 내용을 제거하여 다음 스텝과 일관성 유지.
-    {
-        LOG_DBG("clear kv cache from any extra tokens, n_past = %d\n", n_past);
-        llama_kv_cache_seq_rm(ctx_tgt, 0, n_past, -1); // 시퀀스 0의 n_past 위치 이후 캐시 제거
-    }
-
-    // 2. Get the hidden state from the last layer
-    // const int n_layers = llama_model_n_layer(model_tgt);
-    // const int n_embd = llama_model_n_embd(model_tgt);
-    // float * hidden_state = llama_get_embeddings_ith(ctx_tgt, inp.size()-1); // 마지막 토큰의 hidden state 추출
-
-    // if (hidden_state == nullptr) {
-    //     LOG_ERR("%s: Failed to get hidden state from target model\n", __func__);
-    //     return 1;
-    // }
-    
-    // // 3. Set the hidden state as input embedding for the draft model
-    // //    - Create a tensor for the embedding
-    // struct ggml_tensor * embd_tensor = ggml_new_tensor_2d(ctx_dft->ctx, GGML_TYPE_F32, n_embd, 1);
-    // //    - Copy the hidden state to the tensor
-    // memcpy(embd_tensor->data, hidden_state, n_embd * ggml_element_size(embd_tensor));
-    // //    - Set the tensor as input embedding
-    // ctx_dft->inp_embd = embd_tensor;
-    // ggml_set_input(ctx_dft->inp_embd);
-    // // --- End of hidden state extraction and setting ---
-
-    //여기에 바로 Target Model의 Sampler를 사용해서 Initial Token을 생성해야하나? 아니면 common_speculative_gen_draft() 함수처럼
-    //새로운 함수를 하나 구현해야하나..?
-    // llama_tokens initial_draft = target_model_initialize(spec_target, params_spec, prompt_tgt, id_last);
-
-    printf("Draft Generation Phase에 진입합니다.1\n");
-    fflush(stdout); // 버퍼를 비워 즉시 출력되도록 함
+    bool first_draft_step = true;
+    llama_token id_last_before;
     // 13. 메인 생성 루프
     while (true) {
         // 13.1. Draft 토큰 생성
+        llama_tokens draft;
         // common_speculative_gen_draft: speculator 객체(spec)와 파라미터(params_spec),
         // 이전 토큰(id_last), 그리고 필요시 이전 기록(prompt_tgt)을 사용하여 draft 모델(ctx_dft)을 실행하고
         // 후보 토큰 시퀀스(draft)를 생성함.
         // 주석 수정: params_spec는 Target 모델 구조체가 아니라, Speculation 프로세스 파라미터임.
-        llama_tokens draft = common_speculative_gen_draft(spec, params_spec, prompt_tgt, id_last, ctx_tgt);
-
+            //LOG_INF("Calling gen_draft for the first time with hidden state backup.\n");
+            draft = common_speculative_gen_draft(
+                spec,
+                params_spec,
+                prompt_tgt,
+                id_last,
+                ctx_tgt,
+                hidden_state_backup // <<< 백업된 벡터 전달
+            );
+            first_draft_step = false; // 플래그 업데이트
         //printf("Draft Generation Phase에 진입합니다.2\n");
         //fflush(stdout); // 버퍼를 비워 즉시 출력되도록 함
 
@@ -274,8 +335,8 @@ int main(int argc, char ** argv) {
         //printf("Draft Generation Phase에 진입합니다.3\n");
         //fflush(stdout); // 버퍼를 비워 즉시 출력되도록 함
         // 마지막으로 수락된 토큰(id_last)을 현재 KV 캐시 위치(n_past)에 추가. n_past는 사용 후 증가됨 (++).
-        common_batch_add(batch_tgt, id_last, n_past++, { 0 }, true);
 
+        common_batch_add(batch_tgt, id_last, n_past++, { 0 }, true);
 
         //printf("Draft Generation Phase에 진입합니다.4\n");
         //fflush(stdout); // 버퍼를 비워 즉시 출력되도록 함
@@ -283,7 +344,7 @@ int main(int argc, char ** argv) {
         if (draft.size() >= (size_t) n_draft_min) {
             for (size_t i = 0; i < draft.size(); ++i) {
                 // id_last 다음 위치부터 draft 토큰들을 순서대로 배치에 추가
-                common_batch_add(batch_tgt, draft[i], n_past + i, { 0 }, true);
+                    common_batch_add(batch_tgt, draft[i], n_past + i, { 0 }, true);
             }
         } else {
             draft.clear(); // 너무 짧은 draft는 무시
@@ -297,6 +358,55 @@ int main(int argc, char ** argv) {
         // 각 토큰 위치에 대한 로짓(logits)을 계산함.
         // 주석: 여기가 타겟 모델 forward 시작점인듯 - 정확함.
         llama_decode(ctx_tgt, batch_tgt);
+
+    // +++ Hidden State 백업 +++
+    //LOG_INF("Backing up hidden states...\n");
+    try {
+        // 1. Hidden State 포인터 가져오기 (llama_get_hiddens 함수 사용 가정)
+        float * hidden_ptr = llama_get_hiddens(ctx_tgt);
+
+        if (hidden_ptr != nullptr) {
+            // 2. Hidden State 크기 가져오기 (가장 일반적인 크기는 임베딩 차원)
+            // 주의: llama_get_hiddens가 정확히 어떤 크기의 데이터를 반환하는지에 따라 달라질 수 있습니다.
+            //       여기서는 단일 토큰에 대한 hidden state 벡터(크기 n_embd)를 가정합니다.
+            const int n_embd = llama_n_embd(model_tgt);
+
+            if (n_embd > 0) {
+                // 3. 백업 벡터 크기 조정 및 데이터 복사
+                hidden_state_backup.resize(n_embd * temp_n_past);
+                std::memcpy(hidden_state_backup.data(), hidden_ptr, n_embd * temp_n_past * sizeof(float));
+                //LOG_INF("Successfully backed up %d hidden state values.\n", n_embd * temp_n_past);
+
+                // (선택 사항) 백업된 값 일부 출력 확인
+                // LOG_INF("First few backed up hidden states: ");
+                // for(int i=0; i<std::min(5, n_embd); ++i) {
+                //     printf("%.6f ", hidden_state_backup[i]);
+                // }
+                // printf("\n");
+
+            } else {
+                //LOG_WARN("Warning: n_embd is 0, cannot determine hidden state size for backup.\n");
+            }
+        } else {
+            // 만약 llama_get_hiddens 함수가 없거나 null을 반환하면, 직접 접근 시도 (주의 필요)
+            // if (ctx_tgt->hidden != nullptr) { // llama_context 구조체에 'hidden' 멤버가 있다고 가정
+            //     const int n_embd = llama_n_embd(model_tgt);
+            //     if (n_embd > 0) {
+            //         hidden_state_backup.resize(n_embd);
+            //         std::memcpy(hidden_state_backup.data(), ctx_tgt->hidden, n_embd * sizeof(float));
+            //         LOG_INF("Successfully backed up %d hidden state values (direct access).\n", n_embd);
+            //     } else {
+            //          LOG_WARN("Warning: n_embd is 0, cannot determine hidden state size for backup (direct access).\n");
+            //     }
+            // } else {
+                 //LOG_WARN("Warning: Could not get hidden state pointer (llama_get_hiddens returned null or direct access failed). Backup skipped.\n");
+            // }
+        }
+    } catch (const std::exception& e) {
+        LOG_ERR("Error during hidden state backup: %s\n", e.what());
+        // 필요시 오류 처리
+    }
+    // +++++++++++++++++++++++++++++
 
         //printf("Draft Generation Phase에 진입합니다.\n\n");
         //fflush(stdout); // 버퍼를 비워 즉시 출력되도록 함
@@ -325,6 +435,7 @@ int main(int argc, char ** argv) {
                 prompt_tgt.push_back(id_last);
             }
             // 현재 수락된 토큰으로 id_last 업데이트 (다음 루프 입력용)
+            id_last_before = id_last;
             id_last = ids[i];
 
             // EOS 토큰 검사
@@ -359,6 +470,13 @@ int main(int argc, char ** argv) {
         if ((params.n_predict >= 0 && n_predict >= params.n_predict) || has_eos) {
             break; // 최대 생성 길이에 도달했거나 EOS가 생성되면 외부 루프 탈출
         }
+        //LOG_INF("n_accept  = %d\n", n_accept);  // 수락된 총 draft 토큰 수
+        //여기에 id_last_before 토큰을 한번만 처리하는 디코드 함수를 추가?
+        //printf("여긴 verification 후에 다음 draft 생성 시퀀스로 넘길 히든 스테이트 계산임\n\n");
+        common_batch_clear(batch_tgt); // 배치 초기화
+        // Target에서 온 마지막 토큰(id_last)을 Draft 배치에 추가 (이 위치의 로짓이 필요함, true)
+        common_batch_add (batch_tgt, id_last_before, n_past-1, { 0 }, false);
+        llama_decode_initial(ctx_tgt, batch_tgt, ctx_dft);
     } // end of while(true)
 
     auto t_dec_end = ggml_time_us(); // 토큰 생성 시간 측정 종료

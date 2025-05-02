@@ -116,7 +116,7 @@ int main(int argc, char ** argv) {
     std::cout <<"Model Initialized" << std::endl;
 
     // eval the prompt
-    llama_decode_init(ctx_tgt, llama_batch_get_one(inp.data(), inp.size() - 1));
+    llama_decode_init(ctx_tgt, llama_batch_get_one(inp.data(), inp.size() - 1), ctx_dft);
 
     // note: keep the last token separate!
     llama_token id_last = inp.back();
@@ -176,7 +176,7 @@ int main(int argc, char ** argv) {
         // offloaded to a remote device. it doesn't even have to be based on an LLM. instead, it can provide tokens
         // from a cache or lookup tables.
         //
-        llama_tokens draft = common_speculative_gen_draft(spec, params_spec, prompt_tgt, id_last, ctx_tgt);
+        llama_tokens draft = common_speculative_gen_draft(spec, params_spec, prompt_tgt, id_last, ctx_tgt, {});
 
         //LOG_DBG("draft: %s\n", string_from(ctx_dft, draft).c_str());
 

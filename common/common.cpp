@@ -1225,7 +1225,7 @@ struct common_init_result common_init_from_params_eagle(common_params & params, 
             tmp.push_back(decoder_start_token_id);
         }
         if (llama_model_has_decoder(model)) {
-            llama_decode_eagle(lctx, llama_batch_get_one(tmp.data(), std::min(tmp.size(), (size_t) params.n_batch)), ctx_tgt);
+            llama_decode_draft(lctx, llama_batch_get_one(tmp.data(), std::min(tmp.size(), (size_t) params.n_batch)), ctx_tgt);
         }
         llama_kv_cache_clear(lctx);
         llama_synchronize(lctx);
@@ -1796,6 +1796,7 @@ void common_batch_add(
         batch.seq_id[batch.n_tokens][i] = seq_ids[i];
     }
     batch.logits  [batch.n_tokens] = logits;
+    //batch.hidd [batch.n_tokens] = logits;
 
     batch.n_tokens++;
 }

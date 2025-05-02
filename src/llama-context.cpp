@@ -108,79 +108,599 @@ void llama_set_inputs(llama_context & lctx, const llama_ubatch & ubatch, llama_c
         // }
     }
 
-    if (ctx_tgt.hidden) {
+    if (lctx.hidden) {
         const int64_t n_embd   = hparams.n_embd;
         const int64_t n_tokens = ubatch.n_tokens;
         //printf("tensor setting은 되고 있나?\n\n");
-        ggml_backend_tensor_set(lctx.inp_hidd, ctx_tgt.hidden, 0, n_tokens*n_embd*ggml_element_size(lctx.inp_hidd));
+        ggml_backend_tensor_set(lctx.inp_hidd, lctx.hidden, 0, n_tokens*n_embd*ggml_element_size(lctx.inp_hidd));
         // llama-context.cpp 내 llama_set_inputs 함수, ggml_backend_tensor_set 호출 후
 
         // llama-context.cpp 내 llama_set_inputs 함수, ggml_backend_tensor_set 호출 후
-        if (ctx_tgt.hidden && lctx.inp_hidd) { // lctx는 여기서는 ctx_dft에 해당
-            // const int64_t n_embd   = lctx.model.hparams.n_embd;
-            // const int64_t n_tokens = lctx.n_outputs;
-            const int64_t n_embd   = hparams.n_embd;
+        // if (lctx.hidden && lctx.inp_hidd) { // lctx는 여기서는 ctx_dft에 해당
+        //     // const int64_t n_embd   = lctx.model.hparams.n_embd;
+        //     // const int64_t n_tokens = lctx.n_outputs;
+        //     const int64_t n_embd   = hparams.n_embd;
+        //     const int64_t n_tokens = ubatch.n_tokens;
+
+        //     if (n_tokens > 0) {
+        //         printf("Draft Hidden State (saved to ctx_dft->hidden) @ %p:\n", (void*)lctx.hidden);
+        //         // 첫 번째 토큰의 처음 3개 값 출력
+        //         printf("  [Token 0 Start]: %f, %f, %f\n",
+        //             ((float*)lctx.hidden)[0],
+        //             ((float*)lctx.hidden)[1],
+        //             ((float*)lctx.hidden)[2]);
+        //         // 마지막 토큰의 마지막 3개 값 출력 (n_outputs_new > 0 보장됨)
+        //         int last_token_idx = n_tokens - 1;
+        //         int last_elem_start_idx = last_token_idx * n_embd + n_embd - 3;
+        //         if (n_embd >= 3) {
+        //             printf("  [Token %d End]: %f, %f, %f\n",
+        //                     last_token_idx,
+        //                     ((float*)lctx.hidden)[last_elem_start_idx],
+        //                     ((float*)lctx.hidden)[last_elem_start_idx + 1],
+        //                     ((float*)lctx.hidden)[last_elem_start_idx + 2]);
+        //         }
+        //         //fflush(stdout);
+        //     }
+
+        //     // 데이터를 읽어올 CPU 버퍼 준비
+        //     std::vector<float> temp_hidd_buffer(n_tokens * n_embd);
+
+        //     // inp_hidd 텐서가 할당된 백엔드를 가져옴
+        //     // 참고: 실제로는 sched 객체를 통해 가져와야 할 수 있음
+        //     //       여기서는 간단히 첫 번째 백엔드를 가정하지만, 실제로는 더 정확한 방법 필요
+        //     //       ggml_backend_sched_get_tensor_backend(lctx.sched.get(), lctx.inp_hidd) 사용 권장
+        //     ggml_backend_t backend_hidd = ggml_backend_sched_get_tensor_backend(lctx.sched.get(), lctx.inp_hidd); // 예시, 실제로는 다를 수 있음
+        //     if (!backend_hidd && !lctx.backends.empty()) {
+        //         backend_hidd = lctx.backends[0].get(); // Fallback 예시
+        //     }
+
+        //     if (backend_hidd) {
+        //         // inp_hidd 텐서에서 CPU 버퍼로 데이터 복사 (동기화 포함)
+        //         ggml_backend_tensor_get(lctx.inp_hidd, temp_hidd_buffer.data(), 0, temp_hidd_buffer.size() * sizeof(float));
+        //         // 이제 안전하게 CPU 버퍼에서 데이터 읽기
+        //         printf("Draft Hidden State (copied to CPU buffer from ctx_dft->inp_hidd):\n");
+        //         if (n_tokens > 0) {
+        //             // 첫 번째 토큰의 처음 3개 값 출력
+        //             printf("  [Token 0 Start]: %f, %f, %f\n",
+        //                     temp_hidd_buffer[0],
+        //                     temp_hidd_buffer[1],
+        //                     temp_hidd_buffer[2]);
+        //             // 마지막 토큰의 마지막 3개 값 출력
+        //             int last_token_idx = n_tokens - 1;
+        //             int last_elem_start_idx = last_token_idx * n_embd + n_embd - 3;
+        //             if (n_embd >= 3) {
+        //                 printf("  [Token %d End]: %f, %f, %f\n",
+        //                         last_token_idx,
+        //                         temp_hidd_buffer[last_elem_start_idx],
+        //                         temp_hidd_buffer[last_elem_start_idx + 1],
+        //                         temp_hidd_buffer[last_elem_start_idx + 2]);
+        //             }
+        //             //fflush(stdout);
+        //         }
+        //     } else {
+        //         printf("Could not determine backend for inp_hidd to perform get operation.\n");
+        //     }
+        // }
+
+
+    }
+
+    if (ubatch.pos && lctx.inp_pos) {
+        const int64_t n_tokens = ubatch.n_tokens;
+        auto n_pos = lctx.n_pos_per_token;
+        ggml_backend_tensor_set(lctx.inp_pos, ubatch.pos, 0, n_tokens*n_pos*ggml_element_size(lctx.inp_pos));
+    }
+
+    if (hparams.causal_attn || cparams.pooling_type == LLAMA_POOLING_TYPE_NONE) {
+        //GGML_ASSERT(lctx.inp_out_ids && "every model that can must skip unused outputs");
+
+        if (!lctx.inp_out_ids) {
+            LLAMA_LOG_WARN("%s: 'lctx.inp_out_ids' is not created\n", __func__);
+        } else {
             const int64_t n_tokens = ubatch.n_tokens;
 
-            if (n_tokens > 0) {
-                printf("Draft Hidden State (saved to ctx_dft->hidden) @ %p:\n", (void*)ctx_tgt.hidden);
-                // 첫 번째 토큰의 처음 3개 값 출력
-                printf("  [Token 0 Start]: %f, %f, %f\n",
-                    ((float*)ctx_tgt.hidden)[0],
-                    ((float*)ctx_tgt.hidden)[1],
-                    ((float*)ctx_tgt.hidden)[2]);
-                // 마지막 토큰의 마지막 3개 값 출력 (n_outputs_new > 0 보장됨)
-                int last_token_idx = n_tokens - 1;
-                int last_elem_start_idx = last_token_idx * n_embd + n_embd - 3;
-                if (n_embd >= 3) {
-                    printf("  [Token %d End]: %f, %f, %f\n",
-                            last_token_idx,
-                            ((float*)ctx_tgt.hidden)[last_elem_start_idx],
-                            ((float*)ctx_tgt.hidden)[last_elem_start_idx + 1],
-                            ((float*)ctx_tgt.hidden)[last_elem_start_idx + 2]);
+            GGML_ASSERT(ggml_backend_buffer_is_host(lctx.inp_out_ids->buffer));
+            int32_t * data = (int32_t *) lctx.inp_out_ids->data;
+
+            if (lctx.n_outputs == n_tokens) {
+                for (int i = 0; i < n_tokens; ++i) {
+                    data[i] = i;
                 }
-                //fflush(stdout);
-            }
-
-            // 데이터를 읽어올 CPU 버퍼 준비
-            std::vector<float> temp_hidd_buffer(n_tokens * n_embd);
-
-            // inp_hidd 텐서가 할당된 백엔드를 가져옴
-            // 참고: 실제로는 sched 객체를 통해 가져와야 할 수 있음
-            //       여기서는 간단히 첫 번째 백엔드를 가정하지만, 실제로는 더 정확한 방법 필요
-            //       ggml_backend_sched_get_tensor_backend(lctx.sched.get(), lctx.inp_hidd) 사용 권장
-            ggml_backend_t backend_hidd = ggml_backend_sched_get_tensor_backend(lctx.sched.get(), lctx.inp_hidd); // 예시, 실제로는 다를 수 있음
-            if (!backend_hidd && !lctx.backends.empty()) {
-                backend_hidd = lctx.backends[0].get(); // Fallback 예시
-            }
-
-            if (backend_hidd) {
-                // inp_hidd 텐서에서 CPU 버퍼로 데이터 복사 (동기화 포함)
-                ggml_backend_tensor_get(lctx.inp_hidd, temp_hidd_buffer.data(), 0, temp_hidd_buffer.size() * sizeof(float));
-                // 이제 안전하게 CPU 버퍼에서 데이터 읽기
-                printf("Draft Hidden State (copied to CPU buffer from ctx_dft->inp_hidd):\n");
-                if (n_tokens > 0) {
-                    // 첫 번째 토큰의 처음 3개 값 출력
-                    printf("  [Token 0 Start]: %f, %f, %f\n",
-                            temp_hidd_buffer[0],
-                            temp_hidd_buffer[1],
-                            temp_hidd_buffer[2]);
-                    // 마지막 토큰의 마지막 3개 값 출력
-                    int last_token_idx = n_tokens - 1;
-                    int last_elem_start_idx = last_token_idx * n_embd + n_embd - 3;
-                    if (n_embd >= 3) {
-                        printf("  [Token %d End]: %f, %f, %f\n",
-                                last_token_idx,
-                                temp_hidd_buffer[last_elem_start_idx],
-                                temp_hidd_buffer[last_elem_start_idx + 1],
-                                temp_hidd_buffer[last_elem_start_idx + 2]);
+            } else if (ubatch.output) {
+                int32_t n_outputs = 0;
+                for (int i = 0; i < n_tokens; ++i) {
+                    if (ubatch.output[i]) {
+                        data[n_outputs++] = i;
                     }
-                    //fflush(stdout);
                 }
+                // the graph needs to have been passed the correct number of outputs
+                GGML_ASSERT(lctx.n_outputs == n_outputs);
+            } else if (lctx.n_outputs == 1) {
+                // only keep last output
+                data[0] = n_tokens - 1;
             } else {
-                printf("Could not determine backend for inp_hidd to perform get operation.\n");
+                GGML_ASSERT(lctx.n_outputs == 0);
             }
         }
+    }
+
+    GGML_ASSERT(
+        // (!a || b) is a logical implication (a -> b)
+        // !hparams.causal_attn -> !cparams.causal_attn
+        (hparams.causal_attn || !cparams.causal_attn) &&
+        "causal attention is not supported by this model"
+    );
+
+    if (lctx.inp_KQ_mask || lctx.inp_KQ_mask_swa) {
+        // NOTE: hparams.causal_attn indicates the model is capable of generation and uses the kv cache.
+        if (cparams.causal_attn && !lctx.is_encoding) {
+            const int64_t n_kv         = kv_self.n;
+            const int64_t n_tokens     = ubatch.n_tokens;
+            const int64_t n_seq_tokens = ubatch.n_seq_tokens;
+            const int64_t n_seqs       = ubatch.n_seqs;
+
+
+            float * data     = nullptr;
+            float * data_swa = nullptr;
+
+            if (lctx.inp_KQ_mask) {
+                GGML_ASSERT(ggml_backend_buffer_is_host(lctx.inp_KQ_mask->buffer));
+                data = (float *) lctx.inp_KQ_mask->data;
+            }
+
+            if (lctx.inp_KQ_mask_swa) {
+                GGML_ASSERT(ggml_backend_buffer_is_host(lctx.inp_KQ_mask_swa->buffer));
+                data_swa = (float *) lctx.inp_KQ_mask_swa->data;
+            }
+
+            // For causal attention, use only the previous KV cells
+            // of the correct sequence for each token of the ubatch.
+            // It's assumed that if a token in the batch has multiple sequences, they are equivalent.
+            for (int h = 0; h < 1; ++h) {
+                for (int s = 0; s < n_seqs; ++s) {
+                    const llama_seq_id seq_id = ubatch.seq_id[s][0];
+
+                    for (int j = 0; j < n_seq_tokens; ++j) {
+                        const llama_pos pos = ubatch.pos[s*n_seq_tokens + j];
+
+                        for (int i = 0; i < n_kv; ++i) {
+                            float f;
+                            if (!kv_self.cells[i].has_seq_id(seq_id) || kv_self.cells[i].pos > pos) {
+                                f = -INFINITY;
+                            } else {
+                                if (hparams.use_alibi) {
+                                    f = -std::abs(kv_self.cells[i].pos - pos);
+                                } else {
+                                    f = 0.0f;
+                                }
+                            }
+
+                            if (data) {
+                                data[h*(n_kv*n_tokens) + s*(n_kv*n_seq_tokens) + j*n_kv + i] = f;
+                            }
+
+                            // may need to cut off old tokens for sliding window
+                            if (data_swa) {
+                                if (pos - kv_self.cells[i].pos >= (int32_t)hparams.n_swa) {
+                                    f = -INFINITY;
+                                }
+                                data_swa[h*(n_kv*n_tokens) + s*(n_kv*n_seq_tokens) + j*n_kv + i] = f;
+                            }
+                        }
+                    }
+                }
+
+                if (data) {
+                    for (int i = n_tokens; i < GGML_PAD(n_tokens, GGML_KQ_MASK_PAD); ++i) {
+                        for (int j = 0; j < n_kv; ++j) {
+                            data[h*(n_kv*n_tokens) + i*n_kv + j] = -INFINITY;
+                        }
+                    }
+                }
+
+                if (data_swa) {
+                    for (int i = n_tokens; i < GGML_PAD(n_tokens, GGML_KQ_MASK_PAD); ++i) {
+                        for (int j = 0; j < n_kv; ++j) {
+                            data_swa[h*(n_kv*n_tokens) + i*n_kv + j] = -INFINITY;
+                        }
+                    }
+                }
+            }
+        } else {
+            const int64_t n_tokens     = ubatch.n_tokens;
+            const int64_t n_seq_tokens = ubatch.n_seq_tokens;
+            const int64_t n_seqs       = ubatch.n_seqs;
+            // when using kv cache, the mask needs to match the kv cache size
+            const int64_t n_stride = hparams.causal_attn && !lctx.is_encoding ? kv_self.n : n_tokens;
+
+            GGML_ASSERT(ggml_backend_buffer_is_host(lctx.inp_KQ_mask->buffer));
+
+            float * data = (float *) lctx.inp_KQ_mask->data;
+
+            for (int h = 0; h < 1; ++h) {
+                for (int s1 = 0; s1 < n_seqs; ++s1) {
+                    const llama_seq_id seq_id = ubatch.seq_id[s1][0];
+
+                    for (int j = 0; j < n_seq_tokens; ++j) {
+                        const int32_t tj = s1*n_seq_tokens + j;
+
+                        for (int s0 = 0; s0 < n_seqs; ++s0) {
+                            for (int i = 0; i < n_seq_tokens; ++i) {
+                                const int32_t ti = s0*n_seq_tokens + i;
+                                float f = -INFINITY;
+
+                                for (int s = 0; s < ubatch.n_seq_id[s0]; ++s) {
+                                    if (ubatch.seq_id[s0][s] == seq_id) {
+                                        if (hparams.use_alibi) {
+                                            f = -std::abs(ubatch.pos[ti] - ubatch.pos[tj]);
+                                        } else {
+                                            f = 0.0f;
+                                        }
+                                        break;
+                                    }
+                                }
+
+                                data[h*(n_tokens*n_tokens) + tj*n_stride + ti] = f;
+                            }
+                        }
+
+                        for (int i = n_tokens; i < n_stride; ++i) {
+                            data[h*(n_tokens*n_tokens) + tj*n_stride + i] = -INFINITY;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (cparams.embeddings && cparams.pooling_type == LLAMA_POOLING_TYPE_MEAN) {
+        const int64_t n_tokens     = ubatch.n_tokens;
+        const int64_t n_seq_tokens = ubatch.n_seq_tokens;
+        const int64_t n_seqs       = ubatch.n_seqs;
+
+        GGML_ASSERT(lctx.inp_mean);
+        GGML_ASSERT(ggml_backend_buffer_is_host(lctx.inp_mean->buffer));
+
+        float * data = (float *) lctx.inp_mean->data;
+        memset(lctx.inp_mean->data, 0, n_tokens * n_tokens * ggml_element_size(lctx.inp_mean));
+
+        std::vector<uint64_t> sum(n_tokens, 0);
+
+        for (int s = 0; s < n_seqs; ++s) {
+            const llama_seq_id seq_id = ubatch.seq_id[s][0];
+
+            // TODO: adapt limits to n_seqs when ubatch.equal_seqs is true
+            GGML_ASSERT(seq_id < n_tokens && "seq_id cannot be larger than n_tokens with pooling_type == MEAN");
+
+            sum[seq_id] += ubatch.n_seq_tokens;
+        }
+
+        std::vector<float> div(n_tokens, 0.0f);
+        for (int i = 0; i < n_tokens; ++i) {
+            const uint64_t s = sum[i];
+            if (s > 0) {
+                div[i] = 1.0f/float(s);
+            }
+        }
+
+        for (int s = 0; s < n_seqs; ++s) {
+            const llama_seq_id seq_id = ubatch.seq_id[s][0];
+
+            for (int i = 0; i < n_seq_tokens; ++i) {
+                data[seq_id*n_tokens + s*n_seq_tokens + i] = div[seq_id];
+            }
+        }
+    }
+
+    if (cparams.embeddings && (
+                cparams.pooling_type == LLAMA_POOLING_TYPE_CLS ||
+                cparams.pooling_type == LLAMA_POOLING_TYPE_RANK)) {
+        const int64_t n_tokens     = ubatch.n_tokens;
+        const int64_t n_seq_tokens = ubatch.n_seq_tokens;
+        const int64_t n_seqs       = ubatch.n_seqs;
+
+        GGML_ASSERT(lctx.inp_cls);
+        GGML_ASSERT(ggml_backend_buffer_is_host(lctx.inp_cls->buffer));
+
+        uint32_t * data = (uint32_t *) lctx.inp_cls->data;
+        memset(lctx.inp_cls->data, 0, n_tokens * ggml_element_size(lctx.inp_cls));
+
+        for (int s = 0; s < n_seqs; ++s) {
+            const llama_seq_id seq_id = ubatch.seq_id[s][0];
+
+            // TODO: adapt limits to n_seqs when ubatch.equal_seqs is true
+            GGML_ASSERT(seq_id < n_tokens && "seq_id cannot be larger than n_tokens with pooling_type == CLS or RANK");
+
+            for (int i = 0; i < n_seq_tokens; ++i) {
+                const llama_pos pos = ubatch.pos[s*n_seq_tokens + i];
+
+                if (pos == 0) {
+                    data[seq_id] = s*n_seq_tokens + i;
+                }
+            }
+        }
+    }
+
+    if (cparams.embeddings && cparams.pooling_type == LLAMA_POOLING_TYPE_LAST) {
+        const int64_t n_tokens     = ubatch.n_tokens;
+        const int64_t n_seq_tokens = ubatch.n_seq_tokens;
+        const int64_t n_seqs       = ubatch.n_seqs;
+
+        GGML_ASSERT(lctx.inp_cls);
+        GGML_ASSERT(ggml_backend_buffer_is_host(lctx.inp_cls->buffer));
+
+        uint32_t * data = (uint32_t *) lctx.inp_cls->data;
+        memset(lctx.inp_cls->data, 0, n_tokens * ggml_element_size(lctx.inp_cls));
+
+        std::vector<int> last_pos(n_tokens, -1);
+        std::vector<int> last_row(n_tokens, -1);
+
+        for (int s = 0; s < n_seqs; ++s) {
+            const llama_seq_id seq_id = ubatch.seq_id[s][0];
+
+            // TODO: adapt limits to n_seqs when ubatch.equal_seqs is true
+            GGML_ASSERT(seq_id < n_tokens && "seq_id cannot be larger than n_tokens with pooling_type == LAST");
+
+            for (int i = 0; i < n_seq_tokens; ++i) {
+                const llama_pos pos = ubatch.pos[s*n_seq_tokens + i];
+
+                if (pos >= last_pos[seq_id]) {
+                    last_pos[seq_id] = pos;
+                    last_row[seq_id] = s*n_seq_tokens + i;
+                }
+            }
+        }
+
+        for (int i = 0; i < n_tokens; ++i) {
+            if (last_row[i] >= 0) {
+                data[i] = last_row[i];
+            }
+        }
+    }
+
+    if (kv_self.recurrent) {
+        const int64_t n_kv = kv_self.n;
+
+        if (lctx.inp_s_mask) {
+            GGML_ASSERT(ggml_backend_buffer_is_host(lctx.inp_s_mask->buffer));
+            float * data = (float *) lctx.inp_s_mask->data;
+
+            // clear unused states
+            for (int i = 0; i < n_kv; ++i) {
+                const uint32_t  cell_id = i + kv_self.head;
+                llama_kv_cell & kv_cell = lctx.kv_self.cells[cell_id];
+
+                data[i] = (float) (kv_cell.src >= 0);
+
+                // only clear once
+                if (kv_cell.src < 0) {
+                    kv_cell.src = cell_id;
+                }
+            }
+        }
+
+        if (lctx.inp_s_copy) {
+            GGML_ASSERT(ggml_backend_buffer_is_host(lctx.inp_s_copy->buffer));
+            int32_t * data = (int32_t *) lctx.inp_s_copy->data;
+
+            // assuming copy destinations ALWAYS happen ONLY on the cells between head and head+n
+            for (uint32_t i = 0; i < n_kv; ++i) {
+                const uint32_t  cell_id = i + kv_self.head;
+                llama_kv_cell & kv_cell = lctx.kv_self.cells[cell_id];
+
+                // prevent out-of-bound sources
+                if (kv_cell.src < 0 || (uint32_t) kv_cell.src >= kv_self.size) {
+                    kv_cell.src = cell_id;
+                }
+
+                data[i] = kv_cell.src;
+
+                // ensure copy only happens once
+                if (kv_cell.src != (int32_t) cell_id) {
+                    kv_cell.src = cell_id;
+                }
+            }
+        }
+    }
+
+    if (lctx.inp_pos_bucket) {
+        const int64_t n_tokens = ubatch.n_tokens;
+
+        GGML_ASSERT(ggml_backend_buffer_is_host(lctx.inp_pos_bucket->buffer));
+        GGML_ASSERT(!ubatch.equal_seqs); // TODO: use ubatch.n_seqs instead of failing
+
+        int32_t * data = (int32_t *) lctx.inp_pos_bucket->data;
+
+        if (!lctx.is_encoding) {
+            const int64_t n_kv = kv_self.n;
+            for (int h = 0; h < 1; ++h) {
+                for (int j = 0; j < n_tokens; ++j) {
+                    for (int i = 0; i < n_kv; ++i) {
+                        data[h*(n_kv*n_tokens) + j*n_kv + i] = llama_relative_position_bucket(lctx.kv_self.cells[i].pos, ubatch.pos[j], hparams.n_rel_attn_bkts, lctx.is_encoding);
+                    }
+                }
+            }
+        } else {
+            for (int h = 0; h < 1; ++h) {
+                for (int j = 0; j < n_tokens; ++j) {
+                    for (int i = 0; i < n_tokens; ++i) {
+                        data[h*(n_tokens*n_tokens) + j*n_tokens + i] = llama_relative_position_bucket(ubatch.pos[i], ubatch.pos[j], hparams.n_rel_attn_bkts, lctx.is_encoding);
+                    }
+                }
+            }
+        }
+    }
+
+    if (!lctx.is_encoding && lctx.inp_embd_enc) {
+        assert(lctx.inp_embd_enc->type == GGML_TYPE_F32);
+        assert((size_t) ggml_nelements(lctx.inp_embd_enc) == lctx.embd_enc.size());
+
+        ggml_backend_tensor_set(lctx.inp_embd_enc, lctx.embd_enc.data(), 0, ggml_nbytes(lctx.inp_embd_enc));
+    }
+
+    if (!lctx.is_encoding && lctx.inp_KQ_mask_cross) {
+        const int64_t n_output_enc = lctx.embd_enc.size() / hparams.n_embd;
+        const int64_t n_tokens = ubatch.n_tokens;
+
+        GGML_ASSERT(ggml_backend_buffer_is_host(lctx.inp_KQ_mask_cross->buffer));
+        GGML_ASSERT(!ubatch.equal_seqs); // TODO: use ubatch.n_seqs instead of failing
+
+        float * data = (float *) lctx.inp_KQ_mask_cross->data;
+
+        for (int h = 0; h < 1; ++h) {
+            for (int j = 0; j < n_tokens; ++j) {
+                for (int i = 0; i < n_output_enc; ++i) {
+                    float f = -INFINITY;
+                    for (int s = 0; s < ubatch.n_seq_id[j]; ++s) {
+                        const llama_seq_id seq_id = ubatch.seq_id[j][s];
+                        if (lctx.seq_ids_enc[i].find(seq_id) != lctx.seq_ids_enc[i].end()) {
+                            f = 0.0f;
+                        }
+                    }
+                    data[h*(n_output_enc*n_tokens) + j*n_output_enc + i] = f;
+                }
+            }
+
+            for (int i = n_tokens; i < GGML_PAD(n_tokens, GGML_KQ_MASK_PAD); ++i) {
+                for (int j = 0; j < n_output_enc; ++j) {
+                    data[h*(n_output_enc*n_tokens) + i*n_output_enc + j] = -INFINITY;
+                }
+            }
+        }
+    }
+}
+
+void llama_set_inputs_eagle(llama_context & lctx, const llama_ubatch & ubatch, llama_context & ctx_tgt) {
+    //
+    // set input data
+    //
+
+    const auto & hparams = lctx.model.hparams;
+    const auto & cparams = lctx.cparams;
+    const auto & kv_self = lctx.kv_self;
+
+    if (ubatch.token) {
+        const int64_t n_tokens = ubatch.n_tokens;
+
+        ggml_backend_tensor_set(lctx.inp_tokens, ubatch.token, 0, n_tokens*ggml_element_size(lctx.inp_tokens));
+    }
+
+    if (ubatch.embd) {
+        const int64_t n_embd   = hparams.n_embd;
+        const int64_t n_tokens = ubatch.n_tokens;
+
+        ggml_backend_tensor_set(lctx.inp_hidd, lctx.embd, 0, n_tokens*n_embd*ggml_element_size(lctx.inp_hidd));
+
+        //llama-context.cpp 내 llama_set_inputs 함수, ggml_backend_tensor_set 호출 후
+        // if (lctx.embd && lctx.inp_hidd) { // lctx는 여기서는 ctx_dft에 해당
+        //     // const int64_t n_embd   = lctx.model.hparams.n_embd;
+        //     // const int64_t n_tokens = lctx.n_outputs;
+        //     const int64_t n_embd   = hparams.n_embd;
+        //     const int64_t n_tokens = ubatch.n_tokens;
+
+        //     if (n_tokens > 0) {
+        //         printf("44444444444444Draft Hidden State (saved to ctx_dft->hidden) @ %p:\n", (void*)lctx.embd);
+        //         // 첫 번째 토큰의 처음 3개 값 출력
+        //         printf("  [Token 0 Start]: %f, %f, %f\n",
+        //             ((float*)lctx.embd)[0],
+        //             ((float*)lctx.embd)[1],
+        //             ((float*)lctx.embd)[2]);
+        //         // 마지막 토큰의 마지막 3개 값 출력 (n_outputs_new > 0 보장됨)
+        //         int last_token_idx = n_tokens - 1;
+        //         int last_elem_start_idx = last_token_idx * n_embd + n_embd - 3;
+        //         if (n_embd >= 3) {
+        //             printf("  [Token %d End]: %f, %f, %f\n",
+        //                     last_token_idx,
+        //                     ((float*)lctx.embd)[last_elem_start_idx],
+        //                     ((float*)lctx.embd)[last_elem_start_idx + 1],
+        //                     ((float*)lctx.embd)[last_elem_start_idx + 2]);
+        //         }
+        //         //fflush(stdout);
+        //     }
+        // }
+    }
+
+    if (lctx.hidden) {
+        const int64_t n_embd   = hparams.n_embd;
+        const int64_t n_tokens = ubatch.n_tokens;
+        //printf("tensor setting은 되고 있나?\n\n");
+
+
+
+        //여기에 타겟 모델의 히든 스테이트들을 다 읽어와서 입력으로 넣자.
+        //float * hidden_states_ptr = llama_get_hiddens_ith(&ctx_tgt, 0);
+        float * hidden_states_ptr = llama_get_hiddens(&ctx_tgt);
+
+
+        ggml_backend_tensor_set(lctx.inp_hidd, hidden_states_ptr, 0, n_tokens*n_embd*ggml_element_size(lctx.inp_hidd));
+        // llama-context.cpp 내 llama_set_inputs 함수, ggml_backend_tensor_set 호출 후
+
+        // llama-context.cpp 내 llama_set_inputs 함수, ggml_backend_tensor_set 호출 후
+        // if (hidden_states_ptr && lctx.inp_hidd) { // lctx는 여기서는 ctx_dft에 해당
+        //     // const int64_t n_embd   = lctx.model.hparams.n_embd;
+        //     // const int64_t n_tokens = lctx.n_outputs;
+        //     const int64_t n_embd   = hparams.n_embd;
+        //     const int64_t n_tokens = ubatch.n_tokens;
+
+        //     if (n_tokens > 0) {
+        //         printf("KV Cache Setup in draft model Draft Hidden State (saved to ctx_dft->hidden) @ %p:\n", (void*)hidden_states_ptr);
+        //         // 첫 번째 토큰의 처음 3개 값 출력
+        //         printf("  [Token 0 Start]: %f, %f, %f\n",
+        //             ((float*)hidden_states_ptr)[0],
+        //             ((float*)hidden_states_ptr)[1],
+        //             ((float*)hidden_states_ptr)[2]);
+        //         // 마지막 토큰의 마지막 3개 값 출력 (n_outputs_new > 0 보장됨)
+        //         int last_token_idx = n_tokens - 1;
+        //         int last_elem_start_idx = last_token_idx * n_embd + n_embd - 3;
+        //         if (n_embd >= 3) {
+        //             printf("  [Token %d End]: %f, %f, %f\n",
+        //                     last_token_idx,
+        //                     ((float*)hidden_states_ptr)[last_elem_start_idx],
+        //                     ((float*)hidden_states_ptr)[last_elem_start_idx + 1],
+        //                     ((float*)hidden_states_ptr)[last_elem_start_idx + 2]);
+        //         }
+        //         //fflush(stdout);
+        //     }
+
+        //     // 데이터를 읽어올 CPU 버퍼 준비
+        //     std::vector<float> temp_hidd_buffer(n_tokens * n_embd);
+
+        //     // inp_hidd 텐서가 할당된 백엔드를 가져옴
+        //     // 참고: 실제로는 sched 객체를 통해 가져와야 할 수 있음
+        //     //       여기서는 간단히 첫 번째 백엔드를 가정하지만, 실제로는 더 정확한 방법 필요
+        //     //       ggml_backend_sched_get_tensor_backend(lctx.sched.get(), lctx.inp_hidd) 사용 권장
+        //     ggml_backend_t backend_hidd = ggml_backend_sched_get_tensor_backend(lctx.sched.get(), lctx.inp_hidd); // 예시, 실제로는 다를 수 있음
+        //     if (!backend_hidd && !lctx.backends.empty()) {
+        //         backend_hidd = lctx.backends[0].get(); // Fallback 예시
+        //     }
+
+        //     if (backend_hidd) {
+        //         // inp_hidd 텐서에서 CPU 버퍼로 데이터 복사 (동기화 포함)
+        //         ggml_backend_tensor_get(lctx.inp_hidd, temp_hidd_buffer.data(), 0, temp_hidd_buffer.size() * sizeof(float));
+        //         // 이제 안전하게 CPU 버퍼에서 데이터 읽기
+        //         printf("KV Cache Setup in draft model Draft Hidden State (copied to CPU buffer from ctx_dft->inp_hidd):\n");
+        //         if (n_tokens > 0) {
+        //             // 첫 번째 토큰의 처음 3개 값 출력
+        //             printf("  [Token 0 Start]: %f, %f, %f\n",
+        //                     temp_hidd_buffer[0],
+        //                     temp_hidd_buffer[1],
+        //                     temp_hidd_buffer[2]);
+        //             // 마지막 토큰의 마지막 3개 값 출력
+        //             int last_token_idx = n_tokens - 1;
+        //             int last_elem_start_idx = last_token_idx * n_embd + n_embd - 3;
+        //             if (n_embd >= 3) {
+        //                 printf("  [Token %d End]: %f, %f, %f\n",
+        //                         last_token_idx,
+        //                         temp_hidd_buffer[last_elem_start_idx],
+        //                         temp_hidd_buffer[last_elem_start_idx + 1],
+        //                         temp_hidd_buffer[last_elem_start_idx + 2]);
+        //             }
+        //             //fflush(stdout);
+        //         }
+        //     } else {
+        //         printf("Could not determine backend for inp_hidd to perform get operation.\n");
+        //     }
+        // }
 
 
     }
@@ -990,135 +1510,69 @@ size_t llama_output_reserve(struct llama_context & lctx, size_t n_outputs) {
     const auto n_vocab = vocab.n_tokens();
     const auto n_embd  = hparams.n_embd;
 
-    // 현재 호출에 필요한 섹션 결정 (원본 로직 유지)
-    // TODO: has_logits 로직 확인 필요
-    const bool has_logits = cparams.embeddings;
-    const bool has_embd   = cparams.embeddings && (cparams.pooling_type == LLAMA_POOLING_TYPE_NONE);
-    // hidden 데이터는 embd 필요 여부에 따른다고 가정
-    const bool has_hidd   = has_embd;
+    // TODO: use a per-batch flag for logits presence instead
+    //const bool has_logits = !cparams.embeddings;
+    const bool has_logits =  cparams.embeddings;
+    const bool has_embd   =  cparams.embeddings && (cparams.pooling_type == LLAMA_POOLING_TYPE_NONE);
 
-    // 현재 호출 기준으로 필요한 각 섹션 크기 계산
-    const size_t logits_size = has_logits ? n_vocab * n_outputs_max : 0;
-    const size_t embd_size   = has_embd   ? n_embd  * n_outputs_max : 0;
-    const size_t hidd_size   = has_hidd   ? n_embd  * n_outputs_max : 0;
+    const size_t logits_size = has_logits ? n_vocab*n_outputs_max : 0;
+    const size_t embd_size   = has_embd   ?  n_embd*n_outputs_max : 0;
+    const size_t hidd_size   = has_embd   ?  n_embd*n_outputs_max : 0;
 
     if (lctx.output_ids.empty()) {
+        // init, never resized afterwards
         lctx.output_ids.resize(n_batch);
     }
 
     const size_t prev_size = lctx.buf_output ? ggml_backend_buffer_get_size(lctx.buf_output.get()) : 0;
-    // 사용자가 제공한 코드의 new_size 계산 (embd_size 사용)
-    const size_t requested_new_size = (logits_size + embd_size) * sizeof(float);
-    // 하지만 hidden 데이터도 있으므로 실제 필요한 총 크기는 hidd_size를 포함해야 할 수 있음
-    const size_t actual_total_new_size = (logits_size + hidd_size) * sizeof(float);
+    const size_t new_size  = (logits_size + embd_size) * sizeof(float);
 
-    // printf("Prev Buf Size: %zu bytes, Requested New Size (logits+embd): %zu bytes, Actual Total Needed (logits+hidd): %zu bytes\n\n",
-    //        prev_size, requested_new_size, actual_total_new_size);
-
-    // 임시로 hidden 데이터를 저장할 벡터
-    std::vector<float> saved_hidden_data;
-
-    // --- 버퍼 할당 또는 재할당 필요 여부 확인 ---
-    // 실제 필요한 총 크기(actual_total_new_size)를 기준으로 비교
-    if (!lctx.buf_output || prev_size < actual_total_new_size) {
-
-        // --- 1. 재할당 전에 기존 hidden 데이터 저장 ---
-        // 기존 버퍼와 hidden 포인터가 유효하고, 저장된 데이터 크기가 0보다 클 때만 실행
-        if (lctx.buf_output && lctx.hidden && lctx.hidd_size > 0) {
-             LLAMA_LOG_INFO("%s: Saving existing hidden data (size %zu floats) before reallocation.\n", __func__, lctx.hidd_size);
-            //  printf("Attempting to save %zu hidden float elements from %p\n", lctx.hidd_size, (void*)lctx.hidden);
-            //  fflush(stdout);
-             try {
-                 // lctx.hidd_size는 *이전* 호출에서 설정된 값이어야 함
-                 saved_hidden_data.assign((float*)lctx.hidden, (float*)lctx.hidden + lctx.hidd_size);
-                //  printf("Successfully saved %zu hidden float elements.\n", saved_hidden_data.size());
-                //  fflush(stdout);
-             } catch (const std::bad_alloc& e) {
-                 // 메모리 부족 등으로 벡터 할당/복사 실패 시
-                 LLAMA_LOG_ERROR("%s: Failed to allocate memory for saving hidden data: %s\n", __func__, e.what());
-                 // saved_hidden_data는 비어있는 상태로 남음
-                 saved_hidden_data.clear();
-             } catch (const std::exception& e) {
-                 // 기타 예외 처리
-                 LLAMA_LOG_ERROR("%s: Exception while saving hidden data: %s\n", __func__, e.what());
-                 saved_hidden_data.clear();
-             }
-        }
-
-        // --- 2. 기존 버퍼 및 포인터 리셋 (재할당 시) ---
+    // alloc only when more than the current capacity is required
+    // TODO: also consider shrinking the buffer
+    if (!lctx.buf_output || prev_size < new_size) {
         if (lctx.buf_output) {
-            LLAMA_LOG_INFO("%s: Reallocating output buffer from size %.02f MiB to %.02f MiB\n", __func__, prev_size / 1024.0 / 1024.0, actual_total_new_size / 1024.0 / 1024.0);
-            // 스마트 포인터 리셋 전에 포인터 멤버들 먼저 nullptr로 설정
+#ifndef NDEBUG
+            // This doesn't happen often, but may be annoying in some cases (like the HellaSwag benchmark)
+            LLAMA_LOG_INFO("%s: reallocating output buffer from size %.02f MiB to %.02f MiB\n", __func__, prev_size / 1024.0 / 1024.0, new_size / 1024.0 / 1024.0);
+#endif
+            lctx.buf_output = nullptr;
             lctx.logits = nullptr;
-            lctx.embd = nullptr; // 원본에서도 주석 처리됨
+            lctx.embd = nullptr;
             lctx.hidden = nullptr;
-            lctx.buf_output.reset(); // 스마트 포인터 리셋, 여기서 실제 메모리 해제 발생
-        } else {
-            LLAMA_LOG_INFO("%s: Allocating output buffer (size %.02f MiB)\n", __func__, actual_total_new_size / 1024.0 / 1024.0);
         }
 
-        // --- 3. 새로운 버퍼 할당 ---
         auto * buft = ggml_backend_cpu_buffer_type();
+        // try to use the host buffer of the device where the output tensor is allocated for faster transfer to system memory
         auto * output_dev = lctx.model.dev_output();
         auto * output_dev_host_buft = output_dev ? ggml_backend_dev_host_buffer_type(output_dev) : nullptr;
         if (output_dev_host_buft) {
             buft = output_dev_host_buft;
         }
-        // 실제 필요한 총 크기(actual_total_new_size)로 할당
-        lctx.buf_output.reset(ggml_backend_buft_alloc_buffer(buft, actual_total_new_size));
-
-        // 할당 실패 처리
+        lctx.buf_output.reset(ggml_backend_buft_alloc_buffer(buft, new_size));
         if (lctx.buf_output == nullptr) {
-            LLAMA_LOG_ERROR("%s: failed to allocate output buffer of size %.2f MiB\n", __func__, actual_total_new_size / (1024.0 * 1024.0));
-            // 모든 관련 상태 초기화
-            lctx.logits = nullptr; lctx.embd = nullptr; lctx.hidden = nullptr;
-            lctx.output_size = 0; lctx.logits_size = 0; lctx.embd_size = 0; lctx.hidd_size = 0;
-            return 0; // 실패 시 0 반환
+            LLAMA_LOG_ERROR("%s: failed to allocate output buffer of size %.2f MiB\n", __func__, new_size / (1024.0 * 1024.0));
+            return 0;
         }
     }
 
-    // --- 4. (새로운) 버퍼 내부에 포인터 설정 ---
     float * output_base = (float *) ggml_backend_buffer_get_base(lctx.buf_output.get());
 
-    // 현재 호출의 필요 여부(`has_...`)에 따라 포인터 설정
-    lctx.logits = has_logits ? output_base : nullptr;
-    // hidden 포인터는 현재 계산된 logits_size 만큼 뒤에서 시작
-    // (주의: 만약 logits 필요 여부가 바뀌면 이 오프셋도 바뀔 수 있음)
-    lctx.hidden = has_hidd   ? output_base + logits_size : nullptr;
-    // lctx.embd = ...; // 원본 코드에서 주석 처리됨
+    lctx.logits = has_logits ? output_base               : nullptr;
+    //lctx.embd   = has_embd   ? output_base + logits_size : nullptr;
+    lctx.hidden = has_embd   ? output_base + logits_size : nullptr;
 
-    // --- 5. 저장된 hidden 데이터 복원 (저장된 데이터가 있고, 새 hidden 포인터가 유효할 때) ---
-    if (!saved_hidden_data.empty() && lctx.hidden) {
-        size_t data_to_restore_bytes = saved_hidden_data.size() * sizeof(float);
-        // 새 버퍼에 충분한 공간이 있는지 다시 한번 확인하는 것이 좋습니다.
-        // (이론적으로 actual_total_new_size >= data_to_restore_bytes 여야 함)
-        size_t current_buffer_size = ggml_backend_buffer_get_size(lctx.buf_output.get());
-        // 새 hidden 포인터 + 복원할 데이터 크기가 버퍼 크기를 넘지 않는지 확인
-        if ((uintptr_t)lctx.hidden + data_to_restore_bytes <= (uintptr_t)output_base + current_buffer_size) {
-             LLAMA_LOG_INFO("%s: Restoring saved hidden data (%zu floats) to new buffer location %p.\n", __func__, saved_hidden_data.size(), (void*)lctx.hidden);
-            //  printf("Attempting to restore %zu hidden float elements to %p\n", saved_hidden_data.size(), (void*)lctx.hidden);
-            //  fflush(stdout);
-             memcpy((float*)lctx.hidden, saved_hidden_data.data(), data_to_restore_bytes);
-        } else {
-             LLAMA_LOG_WARN("%s: Not enough space in the new buffer to restore hidden data! (Buffer Size: %zu, Needed Offset+Size: %zu)\n",
-                            __func__, current_buffer_size, ((uintptr_t)lctx.hidden - (uintptr_t)output_base) + data_to_restore_bytes);
-             // 복원 실패 처리 (데이터 유실)
-        }
-    }
-    // saved_hidden_data 벡터는 여기서 스코프를 벗어나며 자동으로 메모리 해제됨
+    lctx.output_size = n_outputs_max;
+    lctx.logits_size = logits_size;
+    lctx.embd_size   = embd_size;
+    lctx.hidd_size = hidd_size;
 
-    // --- 6. 컨텍스트 상태 업데이트 ---
-    // 현재 호출의 계산 결과에 따른 크기 정보 저장
-    lctx.output_size = n_outputs_max; // 현재 호출의 최대 출력 수
-    lctx.logits_size = logits_size;   // 현재 계산된 로짓 크기
-    lctx.embd_size   = embd_size;     // 현재 계산된 임베딩 크기 (hidden 오프셋 계산 등에 사용)
-    lctx.hidd_size   = hidd_size;     // 현재 계산된 히든 크기 (다음 호출에서 저장할 크기)
-
-    // 다음 계산을 위해 출력 상태 초기화
+    // set all ids as invalid (negative)
     std::fill(lctx.output_ids.begin(), lctx.output_ids.end(), -1);
+
+    ggml_backend_buffer_clear(lctx.buf_output.get(), 0);
+
     lctx.n_outputs = 0;
 
-    // 현재 호출 기준의 최대 출력 수 반환
     return n_outputs_max;
 }
 
@@ -1337,6 +1791,16 @@ float * llama_get_embeddings(struct llama_context * ctx) {
     return ctx->embd;
 }
 
+float * llama_get_hiddens(struct llama_context * ctx) {
+    llama_synchronize(ctx);
+
+    // reorder embeddings for backward compatibility
+    // TODO: maybe deprecate this
+    llama_output_reorder(*ctx);
+
+    return ctx->hidden;
+}
+
 float * llama_get_embeddings_ith(struct llama_context * ctx, int32_t i) {
     int32_t j = -1;
 
@@ -1367,6 +1831,46 @@ float * llama_get_embeddings_ith(struct llama_context * ctx, int32_t i) {
         }
 
         return ctx->embd + j*ctx->model.hparams.n_embd;
+    } catch (const std::exception & err) {
+        LLAMA_LOG_ERROR("%s: invalid embeddings id %d, reason: %s\n", __func__, i, err.what());
+#ifndef NDEBUG
+        GGML_ABORT("fatal error");
+#else
+        return nullptr;
+#endif
+    }
+}
+
+float * llama_get_hiddens_ith(struct llama_context * ctx, int32_t i) {
+    int32_t j = -1;
+
+    llama_synchronize(ctx);
+
+    try {
+        if (ctx->hidden == nullptr) {
+            throw std::runtime_error("no embeddings");
+        }
+
+        if (i < 0) {
+            j = ctx->n_outputs + i;
+            if (j < 0) {
+                throw std::runtime_error(format("negative index out of range [0, %d)", ctx->n_outputs));
+            }
+        } else if ((size_t) i >= ctx->output_ids.size()) {
+            throw std::runtime_error(format("out of range [0, %zu)", ctx->output_ids.size()));
+        } else {
+            j = ctx->output_ids[i];
+        }
+
+        if (j < 0) {
+            throw std::runtime_error(format("batch.logits[%d] != true", i));
+        }
+        if (j >= ctx->n_outputs) {
+            // This should not happen
+            throw std::runtime_error(format("corrupt output buffer (j=%d, n_outputs=%d)", j, ctx->n_outputs));
+        }
+
+        return ctx->hidden + j*ctx->model.hparams.n_embd;
     } catch (const std::exception & err) {
         LLAMA_LOG_ERROR("%s: invalid embeddings id %d, reason: %s\n", __func__, i, err.what());
 #ifndef NDEBUG

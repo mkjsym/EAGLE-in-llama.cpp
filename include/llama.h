@@ -871,6 +871,11 @@ extern "C" {
             struct llama_batch   batch,
             struct llama_context * ctx_dft);
 
+    LLAMA_API int32_t llama_decode_while(
+        struct llama_context * ctx,
+        struct llama_batch   batch,
+        struct llama_context * ctx_dft);
+
     LLAMA_API int32_t llama_decode_draft(
             struct llama_context * ctx,
             struct llama_batch   batch,
@@ -879,11 +884,14 @@ extern "C" {
     LLAMA_API int32_t llama_decode_eagle(
         struct llama_context * ctx,
         struct llama_batch   batch,
-        struct llama_context * ctx_tgt);
+        struct llama_context * ctx_tgt,
+        const float *        initial_hidden_state_data, // <<< 새로 추가된 인자
+        size_t               initial_hidden_state_size);
 
     LLAMA_API int32_t llama_decode_init(
             struct llama_context * ctx,
-              struct llama_batch   batch);
+              struct llama_batch   batch,
+              struct llama_context * ctx_dft);
 
     // Set the number of threads used for decoding
     // n_threads is the number of threads used for generation (single token)
@@ -932,6 +940,7 @@ extern "C" {
     // shape: [n_outputs*n_embd]
     // Otherwise, returns NULL.
     LLAMA_API float * llama_get_embeddings(struct llama_context * ctx);
+    LLAMA_API float * llama_get_hiddens(struct llama_context * ctx);
 
     // Get the embeddings for the ith token. For positive indices, Equivalent to:
     // llama_get_embeddings(ctx) + ctx->output_ids[i]*n_embd
@@ -939,6 +948,7 @@ extern "C" {
     // shape: [n_embd] (1-dimensional)
     // returns NULL for invalid ids.
     LLAMA_API float * llama_get_embeddings_ith(struct llama_context * ctx, int32_t i);
+    LLAMA_API float * llama_get_hiddens_ith(struct llama_context * ctx, int32_t i);
 
     // Get the embeddings for a sequence id
     // Returns NULL if pooling_type is LLAMA_POOLING_TYPE_NONE

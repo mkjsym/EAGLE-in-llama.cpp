@@ -355,7 +355,6 @@ struct llama_batch llama_batch_init(int32_t n_tokens_alloc, int32_t embd, int32_
 
     if (embd) {
         batch.embd = (float *) malloc(sizeof(float) * n_tokens_alloc * embd);
-        batch.hidd = (float *) malloc(sizeof(float) * n_tokens_alloc * embd);
     } else {
         batch.token = (llama_token *) malloc(sizeof(llama_token) * n_tokens_alloc);
     }
@@ -369,6 +368,7 @@ struct llama_batch llama_batch_init(int32_t n_tokens_alloc, int32_t embd, int32_
     batch.seq_id[n_tokens_alloc] = nullptr;
 
     batch.logits   = (int8_t *)        malloc(sizeof(int8_t)         * n_tokens_alloc);
+    //batch.hidd = (float *) malloc(sizeof(float) * n_tokens_alloc * embd);
 
     return batch;
 }

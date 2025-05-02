@@ -139,7 +139,8 @@ llama_tokens common_speculative_gen_draft(
     struct common_speculative_params params, // Speculative decoding 파라미터 (주석 수정 필요: Target 모델 구조체가 아님)
     const llama_tokens & prompt_tgt, // Target 모델이 처리한 토큰 히스토리 (주석 수정 필요: 단순 입력 프롬프트 아님)
     llama_token id_last,
-    struct llama_context * ctx_tgt) { // Target 모델이 마지막으로 '수락(accept)'한 토큰 ID
+    struct llama_context * ctx_tgt,
+    const std::vector<float>& initial_hidden_state) { // Target 모델이 마지막으로 '수락(accept)'한 토큰 ID
 
 // 1. Speculator 객체(spec) 내부 멤버들에 대한 참조(reference) 설정
 auto & batch  = spec->batch; // Draft 모델용 배치(batch) 객체
@@ -154,7 +155,9 @@ int reuse_n = 0; // 재사용할 토큰의 개수 (가장 긴 공통 접두사 �
 // Draft 컨텍스트에서 draft 토큰을 생성할 공간을 제외한 최대 히스토리 길이 계산
 const int n_ctx = llama_n_ctx(ctx) - params.n_draft;
 // Target 모델 히스토리(prompt_tgt)에서 비교를 시작할 위치 계산
-const int i_start = std::max<int>(0, (int) prompt_tgt.size() - n_ctx);
+int i_start = std::max<int>(0, (int) prompt_tgt.size() - n_ctx);
+i_start += 1;
+
 
 // Draft 모델의 이전 내부 히스토리(prompt)와 Target 모델의 최신 히스토리(prompt_tgt)를 비교하여
 // 재사용 가능한 가장 긴 공통 시퀀스(prefix)를 찾는다. 이는 Draft 모델의 KV 캐시를 최대한 활용하기 위함.
@@ -218,19 +221,20 @@ if (reuse_n == 0) { // 재사용할 부분이 전혀 없을 경우
 common_batch_clear(batch); // Draft 배치 초기화
 
 // Target 히스토리(prompt_tgt)에서 재사용된 부분(i_start + reuse_n) 이후의 토큰들을 처리
+//printf("%d - %d - %d", i_start, reuse_n, prompt_tgt.size());
 for (size_t i = i_start + reuse_n; i < prompt_tgt.size(); ++i) {
     // 이 토큰들을 Draft 배치에 추가 (위치는 상대적 인덱스 사용)
     //printf("draft 배치에 추가\n");
-    common_batch_add(batch, prompt_tgt[i], i - i_start, { 0 }, false); // 로짓 필요 없음 (false)
-    // Draft 내부 히스토리에도 추가
-    prompt.push_back(prompt_tgt[i]);
+        common_batch_add(batch, prompt_tgt[i], i - i_start, { 0 }, false); // 로짓 필요 없음 (false)
+        // Draft 내부 히스토리에도 추가
+        prompt.push_back(prompt_tgt[i]);
 }
 
 // 만약 처리할 새로운 토큰들이 있었다면 (일반적으로 드문 경우)
 if (batch.n_tokens > 0) {
-    //printf("여기서 터진다 백퍼\n");
+    //printf("llama_decode_eagle 실행됨%d\n", batch.n_tokens);
     // Draft 모델(ctx)을 실행하여 이 토큰들에 대한 KV 캐시 업데이트
-    llama_decode_eagle(ctx, batch, ctx_tgt);
+    llama_decode_eagle(ctx, batch, ctx_tgt, initial_hidden_state.data(), initial_hidden_state.size());
 }
 
 // 5. 마지막 수락 토큰(id_last) 처리
@@ -244,6 +248,7 @@ common_batch_add (batch, id_last, n_past, { 0 }, true);
 prompt.push_back(id_last);
 //printf("여긴 진입하냐..\n");
 // Draft 모델(ctx)을 실행하여 id_last를 처리하고 다음 토큰 예측을 위한 로짓(logits) 계산
+//printf("draft1\n");
 llama_decode_draft(ctx, batch, ctx_tgt);
 //printf("여긴 진입하냐..2\n");
 // 6. Draft 토큰 생성 (샘플링 루프)
@@ -252,7 +257,6 @@ common_sampler_reset(smpl); // Draft 샘플러 상태 초기화
 // 목표 개수(params.n_draft)만큼 Draft 토큰 생성 시도
 for (int i = 0; i < params.n_draft; ++i) {
     common_batch_clear(batch); // 다음 디코딩을 위해 배치 초기화
-
     // Draft 샘플러(smpl)를 사용하여 Draft 컨텍스트(ctx)의 마지막 로짓에서 다음 토큰 샘플링
     common_sampler_sample(smpl, ctx, 0, true); // grammar first (true)
 
@@ -281,12 +285,14 @@ for (int i = 0; i < params.n_draft; ++i) {
 
     // 생성된 토큰의 확률이 너무 낮으면(params.p_min 미만) 더 이상 생성 중단 (신뢰도 부족)
     if (cur_p->data[0].p < params.p_min) {
+        //printf("\n\n%d Terminate Draft Sequence\n\n", i);
         break;
     }
 
     // 다음 토큰 생성을 위해 방금 생성한 토큰(id)을 다시 Draft 배치에 추가
     common_batch_add(batch, id, n_past + i + 1, { 0 }, true); // 로짓 필요 (true)
 
+    //printf("draft2\n");
     // Draft 모델을 다시 실행하여 방금 추가된 토큰을 처리하고 다음 위치의 로짓 계산
     llama_decode_draft(ctx, batch, ctx_tgt);
 
