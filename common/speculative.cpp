@@ -254,18 +254,18 @@ llama_decode_draft(ctx, batch, ctx_tgt);
 // 6. Draft 토큰 생성 (샘플링 루프)
 common_sampler_reset(smpl); // Draft 샘플러 상태 초기화
 
+common_batch_clear(batch); // 다음 디코딩을 위해 배치 초기화
 // 목표 개수(params.n_draft)만큼 Draft 토큰 생성 시도
 for (int i = 0; i < params.n_draft; ++i) {
-    common_batch_clear(batch); // 다음 디코딩을 위해 배치 초기화
     // Draft 샘플러(smpl)를 사용하여 Draft 컨텍스트(ctx)의 마지막 로짓에서 다음 토큰 샘플링
-    common_sampler_sample(smpl, ctx, 0, true); // grammar first (true)
+    common_sampler_sample(smpl, ctx, -1, false); // grammar first (true)
 
     // 샘플링된 후보 토큰 및 확률 가져오기
     const auto * cur_p = common_sampler_get_candidates(smpl);
 
     // 디버깅: 상위 후보 토큰 정보 출력
     for (int k = 0; k < std::min(3, (int) cur_p->size); ++k) {
-        LOG_DBG(" - draft candidate %3d, pos %3d: %6d (%8.3f) '%s'\n",
+        LOG(" - draft candidate %3d, pos %3d: %6d (%8.3f) '%s'\n",
                   k, i, cur_p->data[k].id, cur_p->data[k].p, common_token_to_piece(ctx, cur_p->data[k].id).c_str());
     }
 

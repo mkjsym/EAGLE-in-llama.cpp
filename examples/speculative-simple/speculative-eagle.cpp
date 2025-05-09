@@ -317,16 +317,16 @@ for (int i = 0; i < n_input_tokens; ++i) {
         // 이전 토큰(id_last), 그리고 필요시 이전 기록(prompt_tgt)을 사용하여 draft 모델(ctx_dft)을 실행하고
         // 후보 토큰 시퀀스(draft)를 생성함.
         // 주석 수정: params_spec는 Target 모델 구조체가 아니라, Speculation 프로세스 파라미터임.
-            //LOG_INF("Calling gen_draft for the first time with hidden state backup.\n");
-            draft = common_speculative_gen_draft(
-                spec,
-                params_spec,
-                prompt_tgt,
-                id_last,
-                ctx_tgt,
-                hidden_state_backup // <<< 백업된 벡터 전달
-            );
-            first_draft_step = false; // 플래그 업데이트
+        //LOG_INF("Calling gen_draft for the first time with hidden state backup.\n");
+        draft = common_speculative_gen_draft(
+            spec,
+            params_spec,
+            prompt_tgt,
+            id_last,
+            ctx_tgt,
+            hidden_state_backup // <<< 백업된 벡터 전달
+        );
+        first_draft_step = false; // 플래그 업데이트
         //printf("Draft Generation Phase에 진입합니다.2\n");
         //fflush(stdout); // 버퍼를 비워 즉시 출력되도록 함
 
@@ -475,7 +475,7 @@ for (int i = 0; i < n_input_tokens; ++i) {
         //printf("여긴 verification 후에 다음 draft 생성 시퀀스로 넘길 히든 스테이트 계산임\n\n");
         common_batch_clear(batch_tgt); // 배치 초기화
         // Target에서 온 마지막 토큰(id_last)을 Draft 배치에 추가 (이 위치의 로짓이 필요함, true)
-        common_batch_add (batch_tgt, id_last_before, n_past-1, { 0 }, false);
+        common_batch_add (batch_tgt, id_last_before, n_past - 1, { 0 }, false);
         llama_decode_initial(ctx_tgt, batch_tgt, ctx_dft);
     } // end of while(true)
 

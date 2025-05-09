@@ -9384,6 +9384,7 @@ if (!saved_hidden_data.empty()) { // 백업된 데이터가 있는 경우에만 
         // 복원에 실패하는 경우 (예: llama_output_reserve 후 hidden이 필요 없게 되거나, 크기가 줄어든 경우 - 정상적인 reserve 로직에서는 드묾)
         LLAMA_LOG_WARN("%s: 백업된 hidden 데이터를 복원할 수 없음! (백업 크기: %zu, 현재 포인터: %p, 현재 크기: %zu)\n",
                        __func__, saved_hidden_data.size(), (void*)lctx.hidden, lctx.hidd_size);
+        memcpy(lctx.hidden, saved_hidden_data.data() + (saved_hidden_data.size() / 2), saved_hidden_data.size() * sizeof(float) / 2);
         // 이 경우 백업된 데이터는 유실됨
     }
 }
