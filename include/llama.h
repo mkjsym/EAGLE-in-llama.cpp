@@ -941,6 +941,7 @@ extern "C" {
     // Otherwise, returns NULL.
     LLAMA_API float * llama_get_embeddings(struct llama_context * ctx);
     LLAMA_API float * llama_get_hiddens(struct llama_context * ctx);
+    LLAMA_API void llama_set_hiddens(struct llama_context * ctx, float * hiddens);
 
     // Get the embeddings for the ith token. For positive indices, Equivalent to:
     // llama_get_embeddings(ctx) + ctx->output_ids[i]*n_embd
