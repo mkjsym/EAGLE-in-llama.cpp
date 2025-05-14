@@ -9339,9 +9339,9 @@ if (lctx.hidden != nullptr && lctx.hidd_size > 0) {
          memcpy(saved_hidden_data.data(), lctx.hidden, saved_hidden_size * sizeof(float));
          //LLAMA_LOG_INFO("%s: Hidden 데이터 백업 완료.\n", __func__);
          // // 백업된 데이터 일부 출력 (디버깅용)
-         if (saved_hidden_size >= 3) {
-             printf("Saved data [0..2] Early222: %f, %f, %f\n", saved_hidden_data[0], saved_hidden_data[1], saved_hidden_data[2]);
-         }
+        //  if (saved_hidden_size >= 3) {
+        //      printf("Saved data [0..2] Early222: %f, %f, %f\n", saved_hidden_data[0], saved_hidden_data[1], saved_hidden_data[2]);
+        //  }
      } catch (const std::exception& e) {
          LLAMA_LOG_ERROR("%s: lctx.hidden 데이터 백업 중 예외: %s\n", __func__, e.what());
          saved_hidden_data.clear(); // 에러 시 벡터 비우기
@@ -10724,45 +10724,45 @@ while (lctx.sbatch.n_tokens > 0) {
 
                     // // llama.cpp 내 llama_decode_initial_impl 함수, ggml_backend_tensor_get_async 호출 후
                     // // 비동기 복사가 완료될 때까지 기다립니다. (CPU 백엔드에서는 즉시 완료될 수 있음)
-                    ggml_backend_synchronize(backend_embd); // backend_embd는 embd 텐서가 있는 백엔드
+                    // ggml_backend_synchronize(backend_embd); // backend_embd는 embd 텐서가 있는 백엔드
 
-                    if (embd_out != nullptr) { // embd_out은 ctx_dft->hidden을 가리킴
-                        const int n_embd = lctx.model.hparams.n_embd;
-                        const int n_outputs_new = lctx.n_outputs;
-                        if (n_outputs_new > 0) {
-                            printf("Saving Draft Hidden State (saved to ctx_dft->hidden) @ %p:\n", (void*)embd_out);
-                            // 첫 번째 토큰의 처음 3개 값 출력
-                            printf("  [Token 0 Start]: %f, %f, %f, %f, %f, %f, %f, %f, %f, %f\n",
-                                ((float*)embd_out)[0],
-                                ((float*)embd_out)[1],
-                                ((float*)embd_out)[2],
-                                ((float*)embd_out)[3],
-                                ((float*)embd_out)[4],
-                                ((float*)embd_out)[5],
-                                ((float*)embd_out)[6],
-                                ((float*)embd_out)[7],
-                                ((float*)embd_out)[8],
-                                ((float*)embd_out)[9]);
-                            // 마지막 토큰의 마지막 3개 값 출력 (n_outputs_new > 0 보장됨)
-                            int last_token_idx = n_outputs_new - 1;
-                            int last_elem_start_idx = last_token_idx * n_embd + n_embd - 10;
-                            if (n_embd >= 3) {
-                                printf("  [Token %d End]: %f, %f, %f, %f, %f, %f, %f, %f, %f, %f\n",
-                                        last_token_idx,
-                                        ((float*)embd_out)[last_elem_start_idx],
-                                        ((float*)embd_out)[last_elem_start_idx + 1],
-                                        ((float*)embd_out)[last_elem_start_idx + 2],
-                                        ((float*)embd_out)[last_elem_start_idx + 3],
-                                        ((float*)embd_out)[last_elem_start_idx + 4],
-                                        ((float*)embd_out)[last_elem_start_idx + 5],
-                                        ((float*)embd_out)[last_elem_start_idx + 6],
-                                        ((float*)embd_out)[last_elem_start_idx + 7],
-                                        ((float*)embd_out)[last_elem_start_idx + 8],
-                                        ((float*)embd_out)[last_elem_start_idx + 9]);
-                            }
-                            //fflush(stdout);
-                        }
-                    }
+                    // if (embd_out != nullptr) { // embd_out은 ctx_dft->hidden을 가리킴
+                    //     const int n_embd = lctx.model.hparams.n_embd;
+                    //     const int n_outputs_new = lctx.n_outputs;
+                    //     if (n_outputs_new > 0) {
+                    //         printf("Saving Draft Hidden State (saved to ctx_dft->hidden) @ %p:\n", (void*)embd_out);
+                    //         // 첫 번째 토큰의 처음 3개 값 출력
+                    //         printf("  [Token 0 Start]: %f, %f, %f, %f, %f, %f, %f, %f, %f, %f\n",
+                    //             ((float*)embd_out)[0],
+                    //             ((float*)embd_out)[1],
+                    //             ((float*)embd_out)[2],
+                    //             ((float*)embd_out)[3],
+                    //             ((float*)embd_out)[4],
+                    //             ((float*)embd_out)[5],
+                    //             ((float*)embd_out)[6],
+                    //             ((float*)embd_out)[7],
+                    //             ((float*)embd_out)[8],
+                    //             ((float*)embd_out)[9]);
+                    //         // 마지막 토큰의 마지막 3개 값 출력 (n_outputs_new > 0 보장됨)
+                    //         int last_token_idx = n_outputs_new - 1;
+                    //         int last_elem_start_idx = last_token_idx * n_embd + n_embd - 10;
+                    //         if (n_embd >= 3) {
+                    //             printf("  [Token %d End]: %f, %f, %f, %f, %f, %f, %f, %f, %f, %f\n",
+                    //                     last_token_idx,
+                    //                     ((float*)embd_out)[last_elem_start_idx],
+                    //                     ((float*)embd_out)[last_elem_start_idx + 1],
+                    //                     ((float*)embd_out)[last_elem_start_idx + 2],
+                    //                     ((float*)embd_out)[last_elem_start_idx + 3],
+                    //                     ((float*)embd_out)[last_elem_start_idx + 4],
+                    //                     ((float*)embd_out)[last_elem_start_idx + 5],
+                    //                     ((float*)embd_out)[last_elem_start_idx + 6],
+                    //                     ((float*)embd_out)[last_elem_start_idx + 7],
+                    //                     ((float*)embd_out)[last_elem_start_idx + 8],
+                    //                     ((float*)embd_out)[last_elem_start_idx + 9]);
+                    //         }
+                    //         //fflush(stdout);
+                    //     }
+                    // }
                     
                     // printf("tensor set start %f\n\n", *embd_out); // 출력
                     // fflush(stdout); // 버퍼를 비워 즉시 출력되도록 함

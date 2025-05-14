@@ -158,7 +158,8 @@ const int n_ctx = llama_n_ctx(ctx) - params.n_draft;
 const int i_start = std::max<int>(1, (int) prompt_tgt.size() - n_ctx);
 //i_start += 1;
 
-int ids_size = initial_hidden_state.size() / 4096;
+int ids_size = initial_hidden_state.size() / 4096 - 1;
+//printf("draft phase ids_size: %d\n", ids_size);
 
 // Draft 모델의 이전 내부 히스토리(prompt)와 Target 모델의 최신 히스토리(prompt_tgt)를 비교하여
 // 재사용 가능한 가장 긴 공통 시퀀스(prefix)를 찾는다. 이는 Draft 모델의 KV 캐시를 최대한 활용하기 위함.
@@ -171,17 +172,18 @@ for (int i = 0; i < (int) prompt.size(); ++i) { // Draft 내부 히스토리 순
         cur++; // 일치하면 길이 증가
     }
 
+    cur = (cur - (ids_size)) > 0 ? (cur - (ids_size)) : cur; // 초기 히든 스테이트 길이만큼 감소
     // 더 긴 공통 시퀀스를 찾았고, 최소 재사용 길이(params.n_reuse)를 만족하거나
     // Target 히스토리 전체가 Draft 컨텍스트에 맞는 경우, 재사용 정보 업데이트
     if ((cur >= params.n_reuse || n_ctx >= (int) prompt_tgt.size()) && cur > reuse_n) {
-        cur -= ids_size; // 초기 히든 스테이트 길이만큼 감소
+        //printf("cur: %d\n", cur+ids_size);
         reuse_i = i;     // 재사용 시작 인덱스 (draft 히스토리 기준)
         reuse_n = cur; // 재사용 길이
     }
 }
 
 LOG_DBG("%s: reuse_i = %d, reuse_n = %d, prompt = %d\n", __func__, reuse_i, reuse_n, (int) prompt.size());
-printf("%s: reuse_i = %d, reuse_n = %d, prompt = %d\n", __func__, reuse_i, reuse_n, (int) prompt.size());
+//printf("%s: reuse_i = %d, reuse_n = %d, prompt = %d\n", __func__, reuse_i, reuse_n, (int) prompt.size());
 
 llama_tokens result; // 생성된 draft 토큰들을 저장할 벡터
 result.reserve(params.n_draft); // 미리 메모리 할당
@@ -213,9 +215,11 @@ if (reuse_n == 0) { // 재사용할 부분이 전혀 없을 경우
 
     if (reuse_n < (int) prompt.size()) { // 재사용 부분이 Draft 히스토리 전체가 아니라면
         // KV 캐시에서 재사용 부분 이후(reuse_n ~ end) 제거
+        int prompt_size = prompt.size();
         llama_kv_cache_seq_rm (ctx, 0, reuse_n, -1);
         // Draft 내부 히스토리 벡터에서도 해당 부분 제거
         prompt.erase(prompt.begin() + reuse_n, prompt.end());
+        //printf("prompt erased %d~%d\n", prompt.size() + 1, prompt_size);
     }
     // 결과적으로 Draft 모델의 KV 캐시와 내부 히스토리(prompt)는 정확히 reuse_n개의 토큰 상태만 가짐.
 }
@@ -225,24 +229,40 @@ common_batch_clear(batch); // Draft 배치 초기화
 
 // Target 히스토리(prompt_tgt)에서 재사용된 부분(i_start + reuse_n) 이후의 토큰들을 처리
 //printf("%d - %d - %d", i_start, reuse_n, prompt_tgt.size());
-for (size_t i = i_start + reuse_n; i < prompt_tgt.size(); ++i) {
-    // 이 토큰들을 Draft 배치에 추가 (위치는 상대적 인덱스 사용)
-    //printf("draft 배치에 추가\n");
-    //printf("\n\nreused token index: %d\n\n", i);
-    common_batch_add(batch, prompt_tgt[i], i - i_start, { 0 }, false); // 로짓 필요 없음 (false)
-    const std::string token_str = common_token_to_piece(ctx_tgt, prompt_tgt[i]);
-    // 컬러 출력 처리 (옵션)
-    LOG("\u001b[%dm%s\u001b[37m", (36 - 0 % 6), token_str.c_str());
-    fflush(stdout); // 즉시 출력되도록 버퍼 비우기
-    // Draft 내부 히스토리에도 추가
-    prompt.push_back(prompt_tgt[i]);
+if (prompt.size() == 0) {
+    for (size_t i = i_start + reuse_n; i < prompt_tgt.size(); ++i) {
+        // 이 토큰들을 Draft 배치에 추가 (위치는 상대적 인덱스 사용)
+        //printf("draft 배치에 추가\n");
+        //printf("\n\nreused token index: %d\n\n", i);
+        common_batch_add(batch, prompt_tgt[i], i - i_start, { 0 }, false); // 로짓 필요 없음 (false)
+        // const std::string token_str = common_token_to_piece(ctx_tgt, prompt_tgt[i]);
+        // // 컬러 출력 처리 (옵션)
+        // LOG("\n\nReuse Part:  \u001b[%dm%s\u001b[37m\n\n", (36 - 0 % 6), token_str.c_str());
+        // fflush(stdout); // 즉시 출력되도록 버퍼 비우기
+        // Draft 내부 히스토리에도 추가
+        prompt.push_back(prompt_tgt[i]);
+    }
+}
+else {
+    for (size_t i = i_start + reuse_n; i < prompt_tgt.size(); ++i) {
+        // 이 토큰들을 Draft 배치에 추가 (위치는 상대적 인덱스 사용)
+        //printf("draft 배치에 추가\n");
+        //printf("\n\nreused token index: %d\n\n", i);
+        common_batch_add(batch, prompt_tgt[i], i - i_start, { 0 }, false); // 로짓 필요 없음 (false)
+        // const std::string token_str = common_token_to_piece(ctx_tgt, prompt_tgt[i]);
+        // // 컬러 출력 처리 (옵션)
+        // LOG("\n\nReuse Part:  \u001b[%dm%s\u001b[37m\n\n", (36 - 0 % 6), token_str.c_str());
+        // fflush(stdout); // 즉시 출력되도록 버퍼 비우기
+        // Draft 내부 히스토리에도 추가
+        prompt.push_back(prompt_tgt[i]);
+    }   
 }
 
 // 만약 처리할 새로운 토큰들이 있었다면 (일반적으로 드문 경우)
 if (batch.n_tokens > 0) {
     //printf("llama_decode_eagle 실행됨, batch.n_tokens: %d, initial_hidden_state.size(): %d\n", batch.n_tokens, initial_hidden_state.size());
     // Draft 모델(ctx)을 실행하여 이 토큰들에 대한 KV 캐시 업데이트
-    printf("\nllama_decode_eagle, batch.n_tokens: %d\n", batch.n_tokens);
+    //printf("\nllama_decode_eagle, batch.n_tokens: %d\n", batch.n_tokens);
     llama_decode_eagle(ctx, batch, ctx_tgt, initial_hidden_state.data(), initial_hidden_state.size());
 }
 
@@ -253,6 +273,10 @@ LOG_DBG("%s: n_past = %d\n", __func__, n_past);
 common_batch_clear(batch); // 배치 초기화
 // Target에서 온 마지막 토큰(id_last)을 Draft 배치에 추가 (이 위치의 로짓이 필요함, true)
 common_batch_add (batch, id_last, n_past, { 0 }, true);
+// const std::string token_str = common_token_to_piece(ctx_tgt, id_last);
+// // 컬러 출력 처리 (옵션)
+// LOG("\n\nid_last in draft phase:  \u001b[%dm%s\u001b[37m\n\n", (36 - 0 % 6), token_str.c_str());
+// fflush(stdout); // 즉시 출력되도록 버퍼 비우기
 // Draft 내부 히스토리에도 추가
 prompt.push_back(id_last);
 //printf("여긴 진입하냐..\n");

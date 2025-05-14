@@ -332,7 +332,6 @@ int main(int argc, char ** argv) {
         //fflush(stdout); // 버퍼를 비워 즉시 출력되도록 함
         // 마지막으로 수락된 토큰(id_last)을 현재 KV 캐시 위치(n_past)에 추가. n_past는 사용 후 증가됨 (++).
 
-        printf("n_past: %d\n", n_past);
         common_batch_add(batch_tgt, id_last, n_past++, { 0 }, true);
 
         //printf("Draft Generation Phase에 진입합니다.4\n");
@@ -366,7 +365,7 @@ int main(int argc, char ** argv) {
         const auto ids = common_sampler_sample_and_accept_n(smpl, ctx_tgt, draft);
 
         GGML_ASSERT(ids.size() > 0); // 최소 1개 토큰은 항상 수락됨을 단언
-        printf("\n\n%d\n\n", ids.size());
+        //printf("\n\nids.size(): %d\n\n", ids.size());
 
         // 13.5. 카운터 업데이트
         // n_past: 수락된 토큰들만큼 KV 캐시 위치 업데이트. id_last 위치는 이미 증가했으므로 추가 수락분(ids.size() - 1)만큼 더함.
@@ -376,6 +375,8 @@ int main(int argc, char ** argv) {
             n_accept  += ids.size() - 1;    // 수락된 draft 토큰 수 누적 (첫 토큰은 draft가 아님)
         }
         n_predict += ids.size();            // 총 생성된 토큰 수 누적 (Target 모델 기준)
+
+        //printf("n_past: %d\n", n_past);
 
         // 13.6. 수락된 토큰 처리 및 출력
         for (size_t i = 0; i < ids.size(); ++i) {
@@ -427,27 +428,29 @@ int main(int argc, char ** argv) {
                 if (n_embd > 0) {
                     // 3. 백업 벡터 크기 조정 및 데이터 복사
                     // Backs up hidden states for all tokens in 'ids'
-                    int length = (ids.size() - 1) > 0 ? ids.size() - 1 : 1;
+                    int length = ids.size(); // Ensure at least one token is backed up
+                    //int length = ids.size(); // Ensure at least one token is backed up
                     hidden_state_backup.resize(n_embd * length);
                     std::memcpy(hidden_state_backup.data(), hidden_ptr, n_embd * length * sizeof(float));
-                    LOG_INF("Successfully backed up %zu hidden state values for next draft's input.\n", hidden_state_backup.size());
+                    llama_set_hiddens(ctx_dft, hidden_ptr + (n_embd * (length - 1))); // Set the last hidden state for ctx_dft
+                    LOG_DBG("Successfully backed up %zu hidden state values for next draft's input.\n", hidden_state_backup.size());
                     // 처음 10개 값 출력 (또는 벡터 크기가 10보다 작으면 모든 값 출력)
-                    std::cout << "\nFirst up to 10 values of hidden_state_backup:" << std::endl;
-                    size_t count_to_print_first = std::min(static_cast<size_t>(10), hidden_state_backup.size());
-                    for (size_t i = 0; i < count_to_print_first; ++i) {
-                        std::cout << std::fixed << hidden_state_backup[i] << " "; // 소수점 6자리까지 출력
-                    }
-                    std::cout << std::endl;
-                    if (hidden_state_backup.size() > 10) {
-                        std::cout << "\nLast 10 values of hidden_state_backup:" << std::endl;
-                        size_t start_index_last = hidden_state_backup.size() - 10;
-                        for (size_t i = start_index_last; i < hidden_state_backup.size(); ++i) {
-                            std::cout << std::fixed << hidden_state_backup[i] << " "; // 소수점 6자리까지 출력
-                        }
-                        std::cout << std::endl;
-                    } else if (!hidden_state_backup.empty()) { // 크기가 1에서 10 사이인 경우
-                        std::cout << "\n(Vector has 10 or fewer elements. All elements were shown in 'First up to 10 values'.)" << std::endl;
-                    }
+                    // std::cout << "\nFirst up to 10 values of hidden_state_backup:" << std::endl;
+                    // size_t count_to_print_first = std::min(static_cast<size_t>(10), hidden_state_backup.size());
+                    // for (size_t i = 0; i < count_to_print_first; ++i) {
+                    //     std::cout << std::fixed << hidden_state_backup[i] << " "; // 소수점 6자리까지 출력
+                    // }
+                    // std::cout << std::endl;
+                    // if (hidden_state_backup.size() > 10) {
+                    //     std::cout << "\nLast 10 values of hidden_state_backup:" << std::endl;
+                    //     size_t start_index_last = hidden_state_backup.size() - 10;
+                    //     for (size_t i = start_index_last; i < hidden_state_backup.size(); ++i) {
+                    //         std::cout << std::fixed << hidden_state_backup[i] << " "; // 소수점 6자리까지 출력
+                    //     }
+                    //     std::cout << std::endl;
+                    // } else if (!hidden_state_backup.empty()) { // 크기가 1에서 10 사이인 경우
+                    //     std::cout << "\n(Vector has 10 or fewer elements. All elements were shown in 'First up to 10 values'.)" << std::endl;
+                    // }
                 } else {
                     // LOG_WARN("Warning: n_embd for model_tgt is 0, cannot determine hidden state size for backup.\n");
                     hidden_state_backup.clear();
@@ -481,68 +484,68 @@ int main(int argc, char ** argv) {
         LOG_DBG("Attempting to set hidden state for id_last_before (%d) into ctx_dft's hiddens using llama_get_hiddens.\n", id_last_before);
 
         // We need a valid id_last_before (not its initial -1 value) and enough history in n_past.
-        if (id_last_before != -1 && n_past >= 2) {
-            const llama_model * current_model_tgt_ptr = llama_get_model(ctx_tgt);
-            const llama_model * current_model_dft_ptr = llama_get_model(ctx_dft); // Assuming ctx_dft is valid
+        // if (id_last_before != -1 && n_past >= 2) {
+        //     const llama_model * current_model_tgt_ptr = llama_get_model(ctx_tgt);
+        //     const llama_model * current_model_dft_ptr = llama_get_model(ctx_dft); // Assuming ctx_dft is valid
 
-            if (current_model_tgt_ptr && current_model_dft_ptr) {
-                const int n_embd_tgt_val = llama_n_embd(current_model_tgt_ptr);
-                const int n_embd_dft_val = llama_n_embd(current_model_dft_ptr);
+        //     if (current_model_tgt_ptr && current_model_dft_ptr) {
+        //         const int n_embd_tgt_val = llama_n_embd(current_model_tgt_ptr);
+        //         const int n_embd_dft_val = llama_n_embd(current_model_dft_ptr);
 
-                if (n_embd_tgt_val > 0 && n_embd_dft_val > 0) {
-                    if (n_embd_tgt_val == n_embd_dft_val) {
-                        // llama_get_hiddens(ctx_tgt)는 'ids' 시퀀스에 대한 hidden state 블록의 시작을 반환한다고 가정합니다.
-                        float *hs_block_for_ids = llama_get_hiddens(ctx_tgt);
+        //         if (n_embd_tgt_val > 0 && n_embd_dft_val > 0) {
+        //             if (n_embd_tgt_val == n_embd_dft_val) {
+        //                 // llama_get_hiddens(ctx_tgt)는 'ids' 시퀀스에 대한 hidden state 블록의 시작을 반환한다고 가정합니다.
+        //                 float *hs_block_for_ids = llama_get_hiddens(ctx_tgt);
 
-                        if (hs_block_for_ids != nullptr) {
-                            float *specific_hs_for_id_last_before = nullptr;
+        //                 if (hs_block_for_ids != nullptr) {
+        //                     float *specific_hs_for_id_last_before = nullptr;
 
-                            if (ids.size() >= 2) {
-                                // id_last_before는 ids 시퀀스에서 (ids.size() - 2) 인덱스에 해당합니다.
-                                // (즉, 마지막에서 두 번째로 수락된 토큰)
-                                size_t index_in_ids_for_hs = ids.size() - 2;
-                                specific_hs_for_id_last_before = hs_block_for_ids + (index_in_ids_for_hs * n_embd_tgt_val);
-                                LOG("Identified HS for id_last_before (%d) from ids[%zu] using llama_get_hiddens output.\n", id_last_before, index_in_ids_for_hs);
-                            } else if (ids.size() == 1) {
-                                // ids.size()가 1이면, id_last_before는 ids[0] 이전의 토큰(즉, 이번 while 루프 시작 시의 id_last)입니다.
-                                // hs_block_for_ids가 ids[0]의 hidden state부터 시작한다면,
-                                // 이 방법으로는 id_last_before의 hidden state를 찾을 수 없습니다.
-                                // 이 경우, 이전 반복에서 해당 hidden state를 저장해두거나,
-                                // 임의의 시퀀스 인덱스로 hidden state를 가져올 수 있는 다른 메커니즘이 필요합니다.
-                                specific_hs_for_id_last_before = hs_block_for_ids;
-                                LOG("Cannot obtain hidden state for id_last_before (%d) using llama_get_hiddens(ctx_tgt) when ids.size() is 1, as it's outside the 'ids' block.\n", id_last_before);
-                            }
-                            // else ids.size() < 1, 이는 GGML_ASSERT(ids.size() > 0)에 의해 발생하지 않아야 함
+        //                     if (ids.size() > 1) {
+        //                         // id_last_before는 ids 시퀀스에서 (ids.size() - 2) 인덱스에 해당합니다.
+        //                         // (즉, 마지막에서 두 번째로 수락된 토큰)
+        //                         size_t index_in_ids_for_hs = ids.size();
+        //                         specific_hs_for_id_last_before = hs_block_for_ids + (index_in_ids_for_hs * n_embd_tgt_val);
+        //                         LOG_DBG("Identified HS for id_last_before (%d) from ids[%zu] using llama_get_hiddens output.\n", id_last_before, index_in_ids_for_hs);
+        //                     } else if (ids.size() == 1) {
+        //                         // ids.size()가 1이면, id_last_before는 ids[0] 이전의 토큰(즉, 이번 while 루프 시작 시의 id_last)입니다.
+        //                         // hs_block_for_ids가 ids[0]의 hidden state부터 시작한다면,
+        //                         // 이 방법으로는 id_last_before의 hidden state를 찾을 수 없습니다.
+        //                         // 이 경우, 이전 반복에서 해당 hidden state를 저장해두거나,
+        //                         // 임의의 시퀀스 인덱스로 hidden state를 가져올 수 있는 다른 메커니즘이 필요합니다.
+        //                         specific_hs_for_id_last_before = hs_block_for_ids;
+        //                         LOG_DBG("Cannot obtain hidden state for id_last_before (%d) using llama_get_hiddens(ctx_tgt) when ids.size() is 1, as it's outside the 'ids' block.\n", id_last_before);
+        //                     }
+        //                     // else ids.size() < 1, 이는 GGML_ASSERT(ids.size() > 0)에 의해 발생하지 않아야 함
 
-                            if (specific_hs_for_id_last_before != nullptr) {
-                                // CRITICAL ASSUMPTION: ctx_dft->hiddens가 유효하고 미리 할당된 버퍼를 가리키고 있어야 합니다.
-                                llama_set_hiddens(ctx_dft, specific_hs_for_id_last_before);
-                            } else {
-                                // specific_hs_for_id_last_before가 nullptr인 경우 (주로 ids.size()==1일 때)
-                                if (ids.size() >= 2) { // ids.size() >=2 였는데도 못 찾았다면 문제 로깅
-                                    LOG("Failed to pinpoint specific_hs_for_id_last_before for token %d even though ids.size() >= 2.\n", id_last_before);
-                                }
-                                // ids.size() == 1인 경우의 경고는 위에서 이미 출력됨
-                            }
-                        } else {
-                            LOG("Failed to retrieve hidden_state_block via llama_get_hiddens(ctx_tgt) for processing token %d.\n", id_last_before);
-                        }
-                    } else {
-                        LOG("Embedding dimension mismatch: target (%d) vs draft (%d). Cannot copy hidden state for token %d.\n", n_embd_tgt_val, n_embd_dft_val, id_last_before);
-                    }
-                } else {
-                    LOG("Invalid embedding dimensions (tgt: %d, dft: %d). Cannot process hidden state for token %d.\n", n_embd_tgt_val, n_embd_dft_val, id_last_before);
-                }
-            } else {
-                LOG("Failed to get model pointers from contexts. Cannot process hidden state for token %d.\n", id_last_before);
-            }
-        } else {
-            if (id_last_before == -1) {
-                LOG_DBG("Skipping hidden state copy for ctx_dft: id_last_before is -1 (initial state or insufficient history).\n");
-            } else { // n_past < 2
-                LOG_DBG("Skipping hidden state copy for ctx_dft: n_past (%d) < 2. Not enough history for id_last_before's hidden state.\n", n_past);
-            }
-        }
+        //                     if (specific_hs_for_id_last_before != nullptr) {
+        //                         // CRITICAL ASSUMPTION: ctx_dft->hiddens가 유효하고 미리 할당된 버퍼를 가리키고 있어야 합니다.
+        //                         llama_set_hiddens(ctx_dft, specific_hs_for_id_last_before);
+        //                     } else {
+        //                         // specific_hs_for_id_last_before가 nullptr인 경우 (주로 ids.size()==1일 때)
+        //                         if (ids.size() >= 2) { // ids.size() >=2 였는데도 못 찾았다면 문제 로깅
+        //                             LOG("Failed to pinpoint specific_hs_for_id_last_before for token %d even though ids.size() >= 2.\n", id_last_before);
+        //                         }
+        //                         // ids.size() == 1인 경우의 경고는 위에서 이미 출력됨
+        //                     }
+        //                 } else {
+        //                     LOG("Failed to retrieve hidden_state_block via llama_get_hiddens(ctx_tgt) for processing token %d.\n", id_last_before);
+        //                 }
+        //             } else {
+        //                 LOG("Embedding dimension mismatch: target (%d) vs draft (%d). Cannot copy hidden state for token %d.\n", n_embd_tgt_val, n_embd_dft_val, id_last_before);
+        //             }
+        //         } else {
+        //             LOG("Invalid embedding dimensions (tgt: %d, dft: %d). Cannot process hidden state for token %d.\n", n_embd_tgt_val, n_embd_dft_val, id_last_before);
+        //         }
+        //     } else {
+        //         LOG("Failed to get model pointers from contexts. Cannot process hidden state for token %d.\n", id_last_before);
+        //     }
+        // } else {
+        //     if (id_last_before == -1) {
+        //         LOG_DBG("Skipping hidden state copy for ctx_dft: id_last_before is -1 (initial state or insufficient history).\n");
+        //     } else { // n_past < 2
+        //         LOG_DBG("Skipping hidden state copy for ctx_dft: n_past (%d) < 2. Not enough history for id_last_before's hidden state.\n", n_past);
+        //     }
+        // }
         // +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
         // 13.8. 루프 종료 조건 검사

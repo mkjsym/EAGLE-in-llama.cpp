@@ -116,71 +116,71 @@ void llama_set_inputs(llama_context & lctx, const llama_ubatch & ubatch, llama_c
         // llama-context.cpp 내 llama_set_inputs 함수, ggml_backend_tensor_set 호출 후
 
         // llama-context.cpp 내 llama_set_inputs 함수, ggml_backend_tensor_set 호출 후
-        if (lctx.hidden && lctx.inp_hidd) { // lctx는 여기서는 ctx_dft에 해당
-            // const int64_t n_embd   = lctx.model.hparams.n_embd;
-            // const int64_t n_tokens = lctx.n_outputs;
-            const int64_t n_embd   = hparams.n_embd;
-            const int64_t n_tokens = ubatch.n_tokens;
+        // if (lctx.hidden && lctx.inp_hidd) { // lctx는 여기서는 ctx_dft에 해당
+        //     // const int64_t n_embd   = lctx.model.hparams.n_embd;
+        //     // const int64_t n_tokens = lctx.n_outputs;
+        //     const int64_t n_embd   = hparams.n_embd;
+        //     const int64_t n_tokens = ubatch.n_tokens;
 
-            if (n_tokens > 0) {
-                printf("Draft Hidden State (saved to ctx_dft->hidden) @ %p:\n", (void*)lctx.hidden);
-                // 첫 번째 토큰의 처음 3개 값 출력
-                printf("  [Token 0 Start]: %f, %f, %f\n",
-                    ((float*)lctx.hidden)[0],
-                    ((float*)lctx.hidden)[1],
-                    ((float*)lctx.hidden)[2]);
-                // 마지막 토큰의 마지막 3개 값 출력 (n_outputs_new > 0 보장됨)
-                int last_token_idx = n_tokens - 1;
-                int last_elem_start_idx = last_token_idx * n_embd + n_embd - 3;
-                if (n_embd >= 3) {
-                    printf("  [Token %d End]: %f, %f, %f\n",
-                            last_token_idx,
-                            ((float*)lctx.hidden)[last_elem_start_idx],
-                            ((float*)lctx.hidden)[last_elem_start_idx + 1],
-                            ((float*)lctx.hidden)[last_elem_start_idx + 2]);
-                }
-                //fflush(stdout);
-            }
+        //     if (n_tokens > 0) {
+        //         printf("Draft Hidden State (saved to ctx_dft->hidden) @ %p:\n", (void*)lctx.hidden);
+        //         // 첫 번째 토큰의 처음 3개 값 출력
+        //         printf("  [Token 0 Start]: %f, %f, %f\n",
+        //             ((float*)lctx.hidden)[0],
+        //             ((float*)lctx.hidden)[1],
+        //             ((float*)lctx.hidden)[2]);
+        //         // 마지막 토큰의 마지막 3개 값 출력 (n_outputs_new > 0 보장됨)
+        //         int last_token_idx = n_tokens - 1;
+        //         int last_elem_start_idx = last_token_idx * n_embd + n_embd - 3;
+        //         if (n_embd >= 3) {
+        //             printf("  [Token %d End]: %f, %f, %f\n",
+        //                     last_token_idx,
+        //                     ((float*)lctx.hidden)[last_elem_start_idx],
+        //                     ((float*)lctx.hidden)[last_elem_start_idx + 1],
+        //                     ((float*)lctx.hidden)[last_elem_start_idx + 2]);
+        //         }
+        //         //fflush(stdout);
+        //     }
 
-            // 데이터를 읽어올 CPU 버퍼 준비
-            std::vector<float> temp_hidd_buffer(n_tokens * n_embd);
+        //     // 데이터를 읽어올 CPU 버퍼 준비
+        //     std::vector<float> temp_hidd_buffer(n_tokens * n_embd);
 
-            // inp_hidd 텐서가 할당된 백엔드를 가져옴
-            // 참고: 실제로는 sched 객체를 통해 가져와야 할 수 있음
-            //       여기서는 간단히 첫 번째 백엔드를 가정하지만, 실제로는 더 정확한 방법 필요
-            //       ggml_backend_sched_get_tensor_backend(lctx.sched.get(), lctx.inp_hidd) 사용 권장
-            ggml_backend_t backend_hidd = ggml_backend_sched_get_tensor_backend(lctx.sched.get(), lctx.inp_hidd); // 예시, 실제로는 다를 수 있음
-            if (!backend_hidd && !lctx.backends.empty()) {
-                backend_hidd = lctx.backends[0].get(); // Fallback 예시
-            }
+        //     // inp_hidd 텐서가 할당된 백엔드를 가져옴
+        //     // 참고: 실제로는 sched 객체를 통해 가져와야 할 수 있음
+        //     //       여기서는 간단히 첫 번째 백엔드를 가정하지만, 실제로는 더 정확한 방법 필요
+        //     //       ggml_backend_sched_get_tensor_backend(lctx.sched.get(), lctx.inp_hidd) 사용 권장
+        //     ggml_backend_t backend_hidd = ggml_backend_sched_get_tensor_backend(lctx.sched.get(), lctx.inp_hidd); // 예시, 실제로는 다를 수 있음
+        //     if (!backend_hidd && !lctx.backends.empty()) {
+        //         backend_hidd = lctx.backends[0].get(); // Fallback 예시
+        //     }
 
-            if (backend_hidd) {
-                // inp_hidd 텐서에서 CPU 버퍼로 데이터 복사 (동기화 포함)
-                ggml_backend_tensor_get(lctx.inp_hidd, temp_hidd_buffer.data(), 0, temp_hidd_buffer.size() * sizeof(float));
-                // 이제 안전하게 CPU 버퍼에서 데이터 읽기
-                printf("Draft Hidden State (copied to CPU buffer from ctx_dft->inp_hidd):\n");
-                if (n_tokens > 0) {
-                    // 첫 번째 토큰의 처음 3개 값 출력
-                    printf("  [Token 0 Start]: %f, %f, %f\n",
-                            temp_hidd_buffer[0],
-                            temp_hidd_buffer[1],
-                            temp_hidd_buffer[2]);
-                    // 마지막 토큰의 마지막 3개 값 출력
-                    int last_token_idx = n_tokens - 1;
-                    int last_elem_start_idx = last_token_idx * n_embd + n_embd - 3;
-                    if (n_embd >= 3) {
-                        printf("  [Token %d End]: %f, %f, %f\n",
-                                last_token_idx,
-                                temp_hidd_buffer[last_elem_start_idx],
-                                temp_hidd_buffer[last_elem_start_idx + 1],
-                                temp_hidd_buffer[last_elem_start_idx + 2]);
-                    }
-                    //fflush(stdout);
-                }
-            } else {
-                printf("Could not determine backend for inp_hidd to perform get operation.\n");
-            }
-        }
+        //     if (backend_hidd) {
+        //         // inp_hidd 텐서에서 CPU 버퍼로 데이터 복사 (동기화 포함)
+        //         ggml_backend_tensor_get(lctx.inp_hidd, temp_hidd_buffer.data(), 0, temp_hidd_buffer.size() * sizeof(float));
+        //         // 이제 안전하게 CPU 버퍼에서 데이터 읽기
+        //         printf("Draft Hidden State (copied to CPU buffer from ctx_dft->inp_hidd):\n");
+        //         if (n_tokens > 0) {
+        //             // 첫 번째 토큰의 처음 3개 값 출력
+        //             printf("  [Token 0 Start]: %f, %f, %f\n",
+        //                     temp_hidd_buffer[0],
+        //                     temp_hidd_buffer[1],
+        //                     temp_hidd_buffer[2]);
+        //             // 마지막 토큰의 마지막 3개 값 출력
+        //             int last_token_idx = n_tokens - 1;
+        //             int last_elem_start_idx = last_token_idx * n_embd + n_embd - 3;
+        //             if (n_embd >= 3) {
+        //                 printf("  [Token %d End]: %f, %f, %f\n",
+        //                         last_token_idx,
+        //                         temp_hidd_buffer[last_elem_start_idx],
+        //                         temp_hidd_buffer[last_elem_start_idx + 1],
+        //                         temp_hidd_buffer[last_elem_start_idx + 2]);
+        //             }
+        //             //fflush(stdout);
+        //         }
+        //     } else {
+        //         printf("Could not determine backend for inp_hidd to perform get operation.\n");
+        //     }
+        // }
 
 
     }
@@ -636,71 +636,71 @@ void llama_set_inputs_eagle(llama_context & lctx, const llama_ubatch & ubatch, l
         // llama-context.cpp 내 llama_set_inputs 함수, ggml_backend_tensor_set 호출 후
 
         // llama-context.cpp 내 llama_set_inputs 함수, ggml_backend_tensor_set 호출 후
-        if (hidden_states_ptr && lctx.inp_hidd) { // lctx는 여기서는 ctx_dft에 해당
-            // const int64_t n_embd   = lctx.model.hparams.n_embd;
-            // const int64_t n_tokens = lctx.n_outputs;
-            const int64_t n_embd   = hparams.n_embd;
-            const int64_t n_tokens = ubatch.n_tokens;
+        // if (hidden_states_ptr && lctx.inp_hidd) { // lctx는 여기서는 ctx_dft에 해당
+        //     // const int64_t n_embd   = lctx.model.hparams.n_embd;
+        //     // const int64_t n_tokens = lctx.n_outputs;
+        //     const int64_t n_embd   = hparams.n_embd;
+        //     const int64_t n_tokens = ubatch.n_tokens;
 
-            if (n_tokens > 0) {
-                printf("KV Cache Setup in draft model Draft Hidden State (saved to ctx_dft->hidden) @ %p:\n", (void*)hidden_states_ptr);
-                // 첫 번째 토큰의 처음 3개 값 출력
-                printf("  [Token 0 Start]: %f, %f, %f\n",
-                    ((float*)hidden_states_ptr)[0],
-                    ((float*)hidden_states_ptr)[1],
-                    ((float*)hidden_states_ptr)[2]);
-                // 마지막 토큰의 마지막 3개 값 출력 (n_outputs_new > 0 보장됨)
-                int last_token_idx = n_tokens - 1;
-                int last_elem_start_idx = last_token_idx * n_embd + n_embd - 3;
-                if (n_embd >= 3) {
-                    printf("  [Token %d End]: %f, %f, %f\n",
-                            last_token_idx,
-                            ((float*)hidden_states_ptr)[last_elem_start_idx],
-                            ((float*)hidden_states_ptr)[last_elem_start_idx + 1],
-                            ((float*)hidden_states_ptr)[last_elem_start_idx + 2]);
-                }
-                //fflush(stdout);
-            }
+        //     if (n_tokens > 0) {
+        //         printf("KV Cache Setup in draft model Draft Hidden State (saved to ctx_dft->hidden) @ %p:\n", (void*)hidden_states_ptr);
+        //         // 첫 번째 토큰의 처음 3개 값 출력
+        //         printf("  [Token 0 Start]: %f, %f, %f\n",
+        //             ((float*)hidden_states_ptr)[0],
+        //             ((float*)hidden_states_ptr)[1],
+        //             ((float*)hidden_states_ptr)[2]);
+        //         // 마지막 토큰의 마지막 3개 값 출력 (n_outputs_new > 0 보장됨)
+        //         int last_token_idx = n_tokens - 1;
+        //         int last_elem_start_idx = last_token_idx * n_embd + n_embd - 3;
+        //         if (n_embd >= 3) {
+        //             printf("  [Token %d End]: %f, %f, %f\n",
+        //                     last_token_idx,
+        //                     ((float*)hidden_states_ptr)[last_elem_start_idx],
+        //                     ((float*)hidden_states_ptr)[last_elem_start_idx + 1],
+        //                     ((float*)hidden_states_ptr)[last_elem_start_idx + 2]);
+        //         }
+        //         //fflush(stdout);
+        //     }
 
-            // 데이터를 읽어올 CPU 버퍼 준비
-            std::vector<float> temp_hidd_buffer(n_tokens * n_embd);
+        //     // 데이터를 읽어올 CPU 버퍼 준비
+        //     std::vector<float> temp_hidd_buffer(n_tokens * n_embd);
 
-            // inp_hidd 텐서가 할당된 백엔드를 가져옴
-            // 참고: 실제로는 sched 객체를 통해 가져와야 할 수 있음
-            //       여기서는 간단히 첫 번째 백엔드를 가정하지만, 실제로는 더 정확한 방법 필요
-            //       ggml_backend_sched_get_tensor_backend(lctx.sched.get(), lctx.inp_hidd) 사용 권장
-            ggml_backend_t backend_hidd = ggml_backend_sched_get_tensor_backend(lctx.sched.get(), lctx.inp_hidd); // 예시, 실제로는 다를 수 있음
-            if (!backend_hidd && !lctx.backends.empty()) {
-                backend_hidd = lctx.backends[0].get(); // Fallback 예시
-            }
+        //     // inp_hidd 텐서가 할당된 백엔드를 가져옴
+        //     // 참고: 실제로는 sched 객체를 통해 가져와야 할 수 있음
+        //     //       여기서는 간단히 첫 번째 백엔드를 가정하지만, 실제로는 더 정확한 방법 필요
+        //     //       ggml_backend_sched_get_tensor_backend(lctx.sched.get(), lctx.inp_hidd) 사용 권장
+        //     ggml_backend_t backend_hidd = ggml_backend_sched_get_tensor_backend(lctx.sched.get(), lctx.inp_hidd); // 예시, 실제로는 다를 수 있음
+        //     if (!backend_hidd && !lctx.backends.empty()) {
+        //         backend_hidd = lctx.backends[0].get(); // Fallback 예시
+        //     }
 
-            if (backend_hidd) {
-                // inp_hidd 텐서에서 CPU 버퍼로 데이터 복사 (동기화 포함)
-                ggml_backend_tensor_get(lctx.inp_hidd, temp_hidd_buffer.data(), 0, temp_hidd_buffer.size() * sizeof(float));
-                // 이제 안전하게 CPU 버퍼에서 데이터 읽기
-                printf("KV Cache Setup in draft model Draft Hidden State (copied to CPU buffer from ctx_dft->inp_hidd):\n");
-                if (n_tokens > 0) {
-                    // 첫 번째 토큰의 처음 3개 값 출력
-                    printf("  [Token 0 Start]: %f, %f, %f\n",
-                            temp_hidd_buffer[0],
-                            temp_hidd_buffer[1],
-                            temp_hidd_buffer[2]);
-                    // 마지막 토큰의 마지막 3개 값 출력
-                    int last_token_idx = n_tokens - 1;
-                    int last_elem_start_idx = last_token_idx * n_embd + n_embd - 3;
-                    if (n_embd >= 3) {
-                        printf("  [Token %d End]: %f, %f, %f\n",
-                                last_token_idx,
-                                temp_hidd_buffer[last_elem_start_idx],
-                                temp_hidd_buffer[last_elem_start_idx + 1],
-                                temp_hidd_buffer[last_elem_start_idx + 2]);
-                    }
-                    //fflush(stdout);
-                }
-            } else {
-                printf("Could not determine backend for inp_hidd to perform get operation.\n");
-            }
-        }
+        //     if (backend_hidd) {
+        //         // inp_hidd 텐서에서 CPU 버퍼로 데이터 복사 (동기화 포함)
+        //         ggml_backend_tensor_get(lctx.inp_hidd, temp_hidd_buffer.data(), 0, temp_hidd_buffer.size() * sizeof(float));
+        //         // 이제 안전하게 CPU 버퍼에서 데이터 읽기
+        //         printf("KV Cache Setup in draft model Draft Hidden State (copied to CPU buffer from ctx_dft->inp_hidd):\n");
+        //         if (n_tokens > 0) {
+        //             // 첫 번째 토큰의 처음 3개 값 출력
+        //             printf("  [Token 0 Start]: %f, %f, %f\n",
+        //                     temp_hidd_buffer[0],
+        //                     temp_hidd_buffer[1],
+        //                     temp_hidd_buffer[2]);
+        //             // 마지막 토큰의 마지막 3개 값 출력
+        //             int last_token_idx = n_tokens - 1;
+        //             int last_elem_start_idx = last_token_idx * n_embd + n_embd - 3;
+        //             if (n_embd >= 3) {
+        //                 printf("  [Token %d End]: %f, %f, %f\n",
+        //                         last_token_idx,
+        //                         temp_hidd_buffer[last_elem_start_idx],
+        //                         temp_hidd_buffer[last_elem_start_idx + 1],
+        //                         temp_hidd_buffer[last_elem_start_idx + 2]);
+        //             }
+        //             //fflush(stdout);
+        //         }
+        //     } else {
+        //         printf("Could not determine backend for inp_hidd to perform get operation.\n");
+        //     }
+        // }
 
 
     }
@@ -1811,9 +1811,9 @@ void llama_set_hiddens(struct llama_context * ctx, float * hiddens) {
     if (hiddens == nullptr) {
         throw std::runtime_error("hiddens is null");
     }
-    printf("hidden_size: %d\n", ctx->hidd_size);
+    //printf("hidden_size: %d\n", ctx->hidd_size);
 
-    memcpy(ctx->hidden, hiddens, ctx->hidd_size);
+    memcpy(ctx->hidden, hiddens, ctx->model.hparams.n_embd * sizeof(float));
 }
 
 float * llama_get_embeddings_ith(struct llama_context * ctx, int32_t i) {
