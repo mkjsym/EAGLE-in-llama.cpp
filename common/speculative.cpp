@@ -297,8 +297,8 @@ for (int i = 0; i < params.n_draft; ++i) {
     const auto * cur_p = common_sampler_get_candidates(smpl);
 
     // 디버깅: 상위 후보 토큰 정보 출력
-    for (int k = 0; k < std::min(3, (int) cur_p->size); ++k) {
-        LOG_DBG(" - draft candidate %3d, pos %3d: %6d (%8.3f) '%s'\n",
+    for (int k = 0; k < std::min(1, (int) cur_p->size); ++k) {
+        LOG(" - draft candidate %3d, pos %3d: %6d (%8.3f) '%s'\n",
                   k, i, cur_p->data[k].id, cur_p->data[k].p, common_token_to_piece(ctx, cur_p->data[k].id).c_str());
     }
 

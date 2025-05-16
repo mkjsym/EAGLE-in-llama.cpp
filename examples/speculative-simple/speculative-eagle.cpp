@@ -139,7 +139,7 @@ int main(int argc, char ** argv) {
     // 주석: target model과 호환되는 sampler 객체를 생성해 반환 - 정확함.
     struct common_sampler * smpl = common_sampler_init(model_tgt, params.sampling);
 
-    std::cout <<"Model Initialized" << std::endl; // 모델 초기화 완료 메시지
+    //std::cout <<"Model Initialized" << std::endl; // 모델 초기화 완료 메시지
 
     // 10. 초기 프롬프트 처리 (KV 캐시 워밍업)
     // llama_decode_init (또는 llama_decode): 프롬프트 토큰들(마지막 토큰 제외)을 Target 모델에 입력하여
@@ -154,7 +154,7 @@ int main(int argc, char ** argv) {
 
     // 2. 입력 토큰들을 순회하며 배치에 추가:
     int n_input_tokens = inp.size() - 1; // 반복 횟수 (입력 토큰 개수)
-    printf("Initial decode tokens: %d\n", n_input_tokens);
+    //printf("Initial decode tokens: %d\n", n_input_tokens);
 
     for (int i = 0; i < n_input_tokens; ++i) {
         // 현재 추가할 토큰 ID
@@ -271,7 +271,7 @@ int main(int argc, char ** argv) {
 
     // --- Extract hidden state after first target model run ---
     // 1. Decode the prompt in the target model
-    printf("Target 모델이 Initial Token을 생성합니다.\n\n");
+    //printf("Target 모델이 Initial Token을 생성합니다.\n\n");
     common_batch_clear(batch_tgt); // 배치 초기화
     // Target에서 온 마지막 토큰(id_last)을 Draft 배치에 추가 (이 위치의 로짓이 필요함, true)
     common_batch_add (batch_tgt, id_last, n_past++, { 0 }, true);
@@ -297,10 +297,11 @@ int main(int argc, char ** argv) {
         return 1;
     }
     std::string s(buf, n);
-    printf("{%s} First Token by Target Model\n\n", s.c_str()); // 출력
+    //printf("{%s} First Token by Target Model\n\n", s.c_str()); // 출력
+    printf("%s", s.c_str()); // 출력
     fflush(stdout); // 버퍼를 비워 즉시 출력되도록 함
 
-    printf("Draft Generation Phase에 진입합니다.\n");
+    //printf("Draft Generation Phase에 진입합니다.\n");
     fflush(stdout); // 버퍼를 비워 즉시 출력되도록 함
 
     llama_token id_last_before = id_last;
@@ -331,7 +332,7 @@ int main(int argc, char ** argv) {
         //printf("Draft Generation Phase에 진입합니다.3\n");
         //fflush(stdout); // 버퍼를 비워 즉시 출력되도록 함
         // 마지막으로 수락된 토큰(id_last)을 현재 KV 캐시 위치(n_past)에 추가. n_past는 사용 후 증가됨 (++).
-
+        printf("draft_size: %d\n", draft.size());
         common_batch_add(batch_tgt, id_last, n_past++, { 0 }, true);
 
         //printf("Draft Generation Phase에 진입합니다.4\n");
@@ -377,6 +378,7 @@ int main(int argc, char ** argv) {
         n_predict += ids.size();            // 총 생성된 토큰 수 누적 (Target 모델 기준)
 
         //printf("n_past: %d\n", n_past);
+        printf("accepted size: %d\n", ids.size() - 1);
 
         // 13.6. 수락된 토큰 처리 및 출력
         for (size_t i = 0; i < ids.size(); ++i) {
